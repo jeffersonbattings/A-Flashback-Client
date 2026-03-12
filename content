@@ -526,7 +526,7 @@ titleLabel.BackgroundTransparency = 1
 titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleLabel.TextSize = 8
 titleLabel.Font = Enum.Font.GothamBold
-titleLabel.Text = "🎬 A Flashback (v11)"
+titleLabel.Text = "🎬 A Flashback (v11)      "
 titleLabel.TextXAlignment = Enum.TextXAlignment.Center
 
 local minimized = false
