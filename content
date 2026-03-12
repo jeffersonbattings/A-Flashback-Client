@@ -118,6 +118,10 @@ dofEffect.InFocusRadius = 8
 dofEffect.Enabled = false
 dofEffect.Parent = cam
 
+local heartbeatCC = Instance.new("ColorCorrectionEffect")
+heartbeatCC.Enabled = false
+heartbeatCC.Parent = Lighting
+
 local originalBrightness = Lighting.Brightness
 local originalAmbient = Lighting.Ambient
 local originalOutdoor = Lighting.OutdoorAmbient
@@ -151,19 +155,26 @@ vignetteFrame.BorderSizePixel = 0
 vignetteFrame.ZIndex = 4
 vignetteFrame.Visible = false
 
-local function makeVigEdge(xScale, yScale, xSize, ySize)
+local function makeVigEdge(xScale, yScale, xSize, ySize, rotation)
     local e = Instance.new("Frame", vignetteFrame)
     e.Size = UDim2.new(xSize, 0, ySize, 0)
     e.Position = UDim2.new(xScale, 0, yScale, 0)
-    e.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    e.BackgroundTransparency = 0.45
+    e.BackgroundTransparency = 1
     e.BorderSizePixel = 0
     e.ZIndex = 4
+    local g = Instance.new("UIGradient", e)
+    g.Color = ColorSequence.new(Color3.fromRGB(0,0,0), Color3.fromRGB(0,0,0))
+    g.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0),
+        NumberSequenceKeypoint.new(0.5, 0.5),
+        NumberSequenceKeypoint.new(1, 1),
+    })
+    g.Rotation = rotation
 end
-makeVigEdge(0, 0, 1, 0.18)
-makeVigEdge(0, 0.82, 1, 0.18)
-makeVigEdge(0, 0, 0.12, 1)
-makeVigEdge(0.88, 0, 0.12, 1)
+makeVigEdge(0, 0, 1, 0.4, 180)
+makeVigEdge(0, 0.6, 1, 0.4, 0)
+makeVigEdge(0, 0, 0.3, 1, 90)
+makeVigEdge(0.7, 0, 0.3, 1, 270)
 
 local grainFrame = Instance.new("Frame", sg)
 grainFrame.Size = UDim2.new(1, 0, 1, 0)
@@ -172,25 +183,36 @@ grainFrame.BorderSizePixel = 0
 grainFrame.ZIndex = 6
 grainFrame.Visible = false
 
-local grainImage = Instance.new("ImageLabel", grainFrame)
-grainImage.Size = UDim2.new(1, 0, 1, 0)
-grainImage.Position = UDim2.new(0, 0, 0, 0)
-grainImage.BackgroundTransparency = 1
-grainImage.Image = "rbxassetid://1162950583"
-grainImage.ImageTransparency = 0.6
-grainImage.ScaleType = Enum.ScaleType.Tile
-grainImage.TileSize = UDim2.new(0, 128, 0, 128)
-grainImage.ZIndex = 6
-grainImage.ImageColor3 = Color3.fromRGB(180, 180, 180)
+local GRAIN_COLS = 40
+local GRAIN_ROWS = 25
+local grainDots = {}
+for row = 0, GRAIN_ROWS - 1 do
+    for col = 0, GRAIN_COLS - 1 do
+        local dot = Instance.new("Frame", grainFrame)
+        dot.Size = UDim2.new(1/GRAIN_COLS, 0, 1/GRAIN_ROWS, 0)
+        dot.Position = UDim2.new(col/GRAIN_COLS, 0, row/GRAIN_ROWS, 0)
+        dot.BorderSizePixel = 0
+        dot.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        dot.BackgroundTransparency = 1
+        dot.ZIndex = 6
+        grainDots[#grainDots + 1] = dot
+    end
+end
 
 task.spawn(function()
     while true do
-        task.wait(0.05)
+        task.wait(0.06)
         if filmGrainEnabled then
             grainFrame.Visible = true
-            grainImage.ImageTransparency = 0.55 + math.random() * 0.15
-            local offset = math.random(0, 64)
-            grainImage.Position = UDim2.new(0, -offset, 0, -offset)
+            for _, dot in ipairs(grainDots) do
+                local r = math.random()
+                if r > 0.85 then
+                    dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                    dot.BackgroundTransparency = 0.3 + math.random() * 0.4
+                else
+                    dot.BackgroundTransparency = 1
+                end
+            end
         else
             grainFrame.Visible = false
         end
@@ -201,8 +223,22 @@ task.spawn(function()
     while true do
         task.wait(0.04)
         if heartbeatEnabled then
-            local pulse = math.max(0, math.sin(tick() * 2.5) * 0.5 + 0.5 - 0.2) * 0.25
-            Lighting.Brightness = originalBrightness + pulse
+            heartbeatCC.Enabled = true
+            local t = tick()
+            local cycle = (t * 1.2) % 1
+            local pulse
+            if cycle < 0.12 then
+                pulse = math.sin(cycle / 0.12 * math.pi)
+            elseif cycle < 0.22 then
+                pulse = math.sin((cycle - 0.12) / 0.10 * math.pi) * 0.6
+            else
+                pulse = 0
+            end
+            heartbeatCC.Brightness = pulse * 0.35
+            heartbeatCC.Contrast = pulse * 0.2
+            heartbeatCC.TintColor = Color3.fromRGB(255, 200 - math.floor(pulse * 60), 200 - math.floor(pulse * 60))
+        else
+            heartbeatCC.Enabled = false
         end
     end
 end)
@@ -678,7 +714,7 @@ titleLabel.BackgroundTransparency = 1
 titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleLabel.TextSize = 8
 titleLabel.Font = Enum.Font.GothamBold
-titleLabel.Text = "🎬 A Flashback (v14)"
+titleLabel.Text = "🎬 A Flashback (v15)      "
 titleLabel.TextXAlignment = Enum.TextXAlignment.Center
 
 local minimized = false
@@ -1086,7 +1122,7 @@ end); o3+=1
 
 makeFXBtn(page3, o3, "💓 Heartbeat Pulse", Color3.fromRGB(120,20,40), function()
     heartbeatEnabled = not heartbeatEnabled
-    if not heartbeatEnabled then Lighting.Brightness = originalBrightness end
+    if not heartbeatEnabled then heartbeatCC.Enabled = false end
     return heartbeatEnabled
 end); o3+=1
 
@@ -1143,7 +1179,8 @@ closeBtn.MouseButton1Click:Connect(function()
     cam.FieldOfView = originalFOV
     motionBlur:Destroy()
     dofEffect:Destroy()
+    heartbeatCC:Destroy()
     sg:Destroy()
 end)
 
-print("A Flashback (Client) ready! R = Record P = Play F = Freecam X = Clear ←/→ = Step")
+print("A Flashback ready! R = Record P = Play F = Freecam X = Clear ←/→ = Step")
