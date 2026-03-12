@@ -46,6 +46,7 @@ local function updateRecordBtn() end
 local sg = Instance.new("ScreenGui", lp.PlayerGui)
 sg.Name = "FlashbackUI"
 sg.ResetOnSpawn = false
+sg.IgnoreGuiInset = true
 
 local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
