@@ -40,6 +40,26 @@ local vignetteEnabled = false
 local filmGrainEnabled = false
 local heartbeatEnabled = false
 
+local weatherParticlesFollow = true
+local rainEnabled = false
+local thunderEnabled = false
+local snowEnabled = false
+local blizzardEnabled = false
+local sandstormEnabled = false
+local dawnEnabled = false
+local duskEnabled = false
+local midnightEnabled = false
+local middayEnabled = false
+local eclipseEnabled = false
+local underwaterEnabled = false
+local arcticEnabled = false
+local retroEnabled = false
+local oldtvEnabled = false
+local candleEnabled = false
+local spaceEnabled = false
+local acidEnabled = false
+local bloodMoonEnabled = false
+
 local recordBtn
 local function updateRecordBtn() end
 
@@ -67,7 +87,7 @@ nvBloom.Parent = Lighting
 
 local motionBlur = Instance.new("BlurEffect")
 motionBlur.Size = 0
-motionBlur.Parent = cam
+motionBlur.Parent = Lighting
 
 local sepiaCC = Instance.new("ColorCorrectionEffect")
 sepiaCC.TintColor = Color3.fromRGB(255, 210, 150)
@@ -122,12 +142,233 @@ local heartbeatCC = Instance.new("ColorCorrectionEffect")
 heartbeatCC.Enabled = false
 heartbeatCC.Parent = Lighting
 
+local weatherCC = Instance.new("ColorCorrectionEffect")
+weatherCC.Enabled = false
+weatherCC.Parent = Lighting
+
+local weatherBloom = Instance.new("BloomEffect")
+weatherBloom.Enabled = false
+weatherBloom.Parent = Lighting
+
+local weatherBlur = Instance.new("BlurEffect")
+weatherBlur.Size = 0
+weatherBlur.Parent = Lighting
+
+local thunderFlashCC = Instance.new("ColorCorrectionEffect")
+thunderFlashCC.Brightness = 0
+thunderFlashCC.Enabled = false
+thunderFlashCC.Parent = Lighting
+
+local acidCC = Instance.new("ColorCorrectionEffect")
+acidCC.Enabled = false
+acidCC.Parent = Lighting
+
+local candleCC = Instance.new("ColorCorrectionEffect")
+candleCC.Enabled = false
+candleCC.Parent = Lighting
+
 local originalBrightness = Lighting.Brightness
 local originalAmbient = Lighting.Ambient
 local originalOutdoor = Lighting.OutdoorAmbient
 local originalFogEnd = Lighting.FogEnd
 local originalFogStart = Lighting.FogStart
 local originalFogColor = Lighting.FogColor
+local originalClockTime = Lighting.ClockTime
+
+local weatherPart = Instance.new("Part")
+weatherPart.Size = Vector3.new(200, 1, 200)
+weatherPart.Anchored = true
+weatherPart.CanCollide = false
+weatherPart.Transparency = 1
+weatherPart.CastShadow = false
+weatherPart.Name = "FlashbackWeather"
+weatherPart.Parent = workspace
+
+local rainEmitter = Instance.new("ParticleEmitter", weatherPart)
+rainEmitter.Texture = "rbxassetid://6738435735"
+rainEmitter.Rate = 0
+rainEmitter.Speed = NumberRange.new(60, 80)
+rainEmitter.Lifetime = NumberRange.new(0.5, 1)
+rainEmitter.Size = NumberSequence.new({NumberSequenceKeypoint.new(0,0.05), NumberSequenceKeypoint.new(1,0.05)})
+rainEmitter.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0,0.3), NumberSequenceKeypoint.new(1,0.3)})
+rainEmitter.Color = ColorSequence.new(Color3.fromRGB(180,200,255))
+rainEmitter.EmissionDirection = Enum.NormalId.Bottom
+rainEmitter.SpreadAngle = Vector2.new(5,5)
+rainEmitter.RotSpeed = NumberRange.new(0,0)
+rainEmitter.Rotation = NumberRange.new(90,90)
+rainEmitter.Enabled = false
+
+local snowEmitter = Instance.new("ParticleEmitter", weatherPart)
+snowEmitter.Texture = "rbxassetid://6738435735"
+snowEmitter.Rate = 0
+snowEmitter.Speed = NumberRange.new(8, 15)
+snowEmitter.Lifetime = NumberRange.new(3, 5)
+snowEmitter.Size = NumberSequence.new({NumberSequenceKeypoint.new(0,0.12), NumberSequenceKeypoint.new(1,0.08)})
+snowEmitter.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0,0.1), NumberSequenceKeypoint.new(1,0.4)})
+snowEmitter.Color = ColorSequence.new(Color3.fromRGB(255,255,255))
+snowEmitter.EmissionDirection = Enum.NormalId.Bottom
+snowEmitter.SpreadAngle = Vector2.new(30,30)
+snowEmitter.RotSpeed = NumberRange.new(-45,45)
+snowEmitter.Enabled = false
+
+local sandEmitter = Instance.new("ParticleEmitter", weatherPart)
+sandEmitter.Texture = "rbxassetid://6738435735"
+sandEmitter.Rate = 0
+sandEmitter.Speed = NumberRange.new(40, 70)
+sandEmitter.Lifetime = NumberRange.new(0.8, 1.5)
+sandEmitter.Size = NumberSequence.new({NumberSequenceKeypoint.new(0,0.08), NumberSequenceKeypoint.new(1,0.04)})
+sandEmitter.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0,0.4), NumberSequenceKeypoint.new(1,0.7)})
+sandEmitter.Color = ColorSequence.new(Color3.fromRGB(200,160,80))
+sandEmitter.EmissionDirection = Enum.NormalId.Front
+sandEmitter.SpreadAngle = Vector2.new(15,15)
+sandEmitter.Enabled = false
+
+RunService.Heartbeat:Connect(function()
+    if weatherParticlesFollow then
+        weatherPart.CFrame = CFrame.new(cam.CFrame.Position + Vector3.new(0, 20, 0))
+    end
+end)
+
+local function stopAllWeatherParticles()
+    rainEmitter.Enabled = false
+    rainEmitter.Rate = 0
+    snowEmitter.Enabled = false
+    snowEmitter.Rate = 0
+    sandEmitter.Enabled = false
+    sandEmitter.Rate = 0
+end
+
+local function resetWeatherCC()
+    weatherCC.Enabled = false
+    weatherCC.TintColor = Color3.fromRGB(255,255,255)
+    weatherCC.Brightness = 0
+    weatherCC.Contrast = 0
+    weatherCC.Saturation = 0
+    weatherBloom.Enabled = false
+    weatherBlur.Size = 0
+    Lighting.FogEnd = originalFogEnd
+    Lighting.FogStart = originalFogStart
+    Lighting.FogColor = originalFogColor
+    Lighting.Brightness = originalBrightness
+    Lighting.Ambient = originalAmbient
+    Lighting.OutdoorAmbient = originalOutdoor
+    Lighting.ClockTime = originalClockTime
+    weatherPart.CFrame = CFrame.new(weatherPart.Position)
+end
+
+local function disableAllWeatherShaders()
+    rainEnabled = false
+    thunderEnabled = false
+    snowEnabled = false
+    blizzardEnabled = false
+    sandstormEnabled = false
+    dawnEnabled = false
+    duskEnabled = false
+    midnightEnabled = false
+    middayEnabled = false
+    eclipseEnabled = false
+    underwaterEnabled = false
+    arcticEnabled = false
+    retroEnabled = false
+    oldtvEnabled = false
+    candleEnabled = false
+    spaceEnabled = false
+    acidEnabled = false
+    bloodMoonEnabled = false
+    stopAllWeatherParticles()
+    resetWeatherCC()
+    thunderFlashCC.Enabled = false
+    acidCC.Enabled = false
+    candleCC.Enabled = false
+end
+
+task.spawn(function()
+    while true do
+        task.wait(math.random(4, 10))
+        if thunderEnabled then
+            thunderFlashCC.Enabled = true
+            thunderFlashCC.Brightness = 1.5
+            task.wait(0.05)
+            thunderFlashCC.Brightness = 0
+            task.wait(0.05)
+            thunderFlashCC.Brightness = 0.8
+            task.wait(0.05)
+            thunderFlashCC.Brightness = 0
+            thunderFlashCC.Enabled = false
+        end
+    end
+end)
+
+task.spawn(function()
+    local hue = 0
+    while true do
+        task.wait(0.05)
+        if acidEnabled then
+            hue = (hue + 0.02) % 1
+            acidCC.Enabled = true
+            acidCC.TintColor = Color3.fromHSV(hue, 0.6, 1)
+            acidCC.Saturation = 1.5
+            acidCC.Contrast = 0.3
+            acidCC.Brightness = 0.05
+        else
+            acidCC.Enabled = false
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.08)
+        if candleEnabled then
+            candleCC.Enabled = true
+            local flicker = (math.random() - 0.5) * 0.1
+            candleCC.Brightness = -0.2 + flicker
+            candleCC.TintColor = Color3.fromRGB(255, 180 + math.floor(flicker * 100), 100)
+            candleCC.Contrast = 0.3
+            candleCC.Saturation = 0.3
+        else
+            candleCC.Enabled = false
+        end
+    end
+end)
+
+local tvFrame = Instance.new("Frame", sg)
+tvFrame.Size = UDim2.new(1, 0, 1, 0)
+tvFrame.BackgroundTransparency = 1
+tvFrame.BorderSizePixel = 0
+tvFrame.ZIndex = 8
+tvFrame.Visible = false
+
+local SCAN_LINES = 60
+for i = 0, SCAN_LINES - 1 do
+    local line = Instance.new("Frame", tvFrame)
+    line.Size = UDim2.new(1, 0, 1/SCAN_LINES * 0.4, 0)
+    line.Position = UDim2.new(0, 0, i/SCAN_LINES, 0)
+    line.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    line.BackgroundTransparency = 0.7
+    line.BorderSizePixel = 0
+    line.ZIndex = 8
+end
+
+local tvFlickerCC = Instance.new("ColorCorrectionEffect")
+tvFlickerCC.Saturation = -0.5
+tvFlickerCC.Contrast = 0.3
+tvFlickerCC.Enabled = false
+tvFlickerCC.Parent = Lighting
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if oldtvEnabled then
+            tvFlickerCC.Enabled = true
+            tvFlickerCC.Brightness = (math.random() - 0.5) * 0.06
+            tvFrame.Visible = true
+        else
+            tvFlickerCC.Enabled = false
+            tvFrame.Visible = false
+        end
+    end
+end)
 
 local barHeight = isMobile and 0.08 or 0.06
 
@@ -147,44 +388,21 @@ cineBarsBot.BorderSizePixel = 0
 cineBarsBot.ZIndex = 5
 cineBarsBot.Visible = false
 
-local vignetteFrame = Instance.new("Frame", sg)
-vignetteFrame.Size = UDim2.new(1, 0, 1, 0)
-vignetteFrame.Position = UDim2.new(0, 0, 0, 0)
-vignetteFrame.BackgroundTransparency = 1
-vignetteFrame.BorderSizePixel = 0
-vignetteFrame.ZIndex = 4
-vignetteFrame.Visible = false
-
-local function makeVigEdge(xScale, yScale, xSize, ySize, rotation)
-    local e = Instance.new("Frame", vignetteFrame)
-    e.Size = UDim2.new(xSize, 0, ySize, 0)
-    e.Position = UDim2.new(xScale, 0, yScale, 0)
-    e.BackgroundTransparency = 1
-    e.BorderSizePixel = 0
-    e.ZIndex = 4
-    local g = Instance.new("UIGradient", e)
-    g.Color = ColorSequence.new(Color3.fromRGB(0,0,0), Color3.fromRGB(0,0,0))
-    g.Transparency = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 0),
-        NumberSequenceKeypoint.new(0.5, 0.5),
-        NumberSequenceKeypoint.new(1, 1),
-    })
-    g.Rotation = rotation
-end
-makeVigEdge(0, 0, 1, 0.4, 180)
-makeVigEdge(0, 0.6, 1, 0.4, 0)
-makeVigEdge(0, 0, 0.3, 1, 90)
-makeVigEdge(0.7, 0, 0.3, 1, 270)
+local vignetteCC = Instance.new("ColorCorrectionEffect")
+vignetteCC.Brightness = -0.15
+vignetteCC.Contrast = 0.25
+vignetteCC.Enabled = false
+vignetteCC.Parent = Lighting
 
 local grainFrame = Instance.new("Frame", sg)
 grainFrame.Size = UDim2.new(1, 0, 1, 0)
 grainFrame.BackgroundTransparency = 1
 grainFrame.BorderSizePixel = 0
-grainFrame.ZIndex = 6
+grainFrame.ZIndex = 7
 grainFrame.Visible = false
 
-local GRAIN_COLS = 40
-local GRAIN_ROWS = 25
+local GRAIN_COLS = 80
+local GRAIN_ROWS = 50
 local grainDots = {}
 for row = 0, GRAIN_ROWS - 1 do
     for col = 0, GRAIN_COLS - 1 do
@@ -194,7 +412,7 @@ for row = 0, GRAIN_ROWS - 1 do
         dot.BorderSizePixel = 0
         dot.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
         dot.BackgroundTransparency = 1
-        dot.ZIndex = 6
+        dot.ZIndex = 7
         grainDots[#grainDots + 1] = dot
     end
 end
@@ -205,8 +423,7 @@ task.spawn(function()
         if filmGrainEnabled then
             grainFrame.Visible = true
             for _, dot in ipairs(grainDots) do
-                local r = math.random()
-                if r > 0.85 then
+                if math.random() > 0.85 then
                     dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
                     dot.BackgroundTransparency = 0.3 + math.random() * 0.4
                 else
@@ -271,6 +488,40 @@ local function setFog(on)
     end
 end
 
+local function applyWeather(cfg)
+    disableAllWeatherShaders()
+    if cfg.fog then
+        Lighting.FogEnd = cfg.fog.e
+        Lighting.FogStart = cfg.fog.s
+        Lighting.FogColor = cfg.fog.c
+    end
+    if cfg.cc then
+        weatherCC.Enabled = true
+        weatherCC.TintColor = cfg.cc.tint or Color3.fromRGB(255,255,255)
+        weatherCC.Brightness = cfg.cc.brightness or 0
+        weatherCC.Contrast = cfg.cc.contrast or 0
+        weatherCC.Saturation = cfg.cc.saturation or 0
+    end
+    if cfg.bloom then
+        weatherBloom.Enabled = true
+        weatherBloom.Intensity = cfg.bloom.i or 1
+        weatherBloom.Size = cfg.bloom.s or 24
+        weatherBloom.Threshold = cfg.bloom.t or 0.95
+    end
+    if cfg.blur then weatherBlur.Size = cfg.blur end
+    if cfg.brightness then Lighting.Brightness = cfg.brightness end
+    if cfg.ambient then Lighting.Ambient = cfg.ambient end
+    if cfg.outdoor then Lighting.OutdoorAmbient = cfg.outdoor end
+    if cfg.clock then Lighting.ClockTime = cfg.clock end
+    if cfg.rain then rainEmitter.Rate = cfg.rain; rainEmitter.Enabled = true end
+    if cfg.snow then snowEmitter.Rate = cfg.snow; snowEmitter.Enabled = true end
+    if cfg.sand then
+        sandEmitter.Rate = cfg.sand
+        sandEmitter.Enabled = true
+        weatherPart.CFrame = weatherPart.CFrame * CFrame.Angles(0, 0, math.rad(10))
+    end
+end
+
 local jointIndex = {}
 local jointNames = {}
 local jointCount = 0
@@ -285,13 +536,8 @@ local function getJointId(name)
 end
 
 local function cfToNums(cf)
-    local rx = cf.XVector
-    local ry = cf.YVector
-    local rz = cf.ZVector
-    return cf.X, cf.Y, cf.Z,
-        rx.X, ry.X, rz.X,
-        rx.Y, ry.Y, rz.Y,
-        rx.Z, ry.Z, rz.Z
+    local rx = cf.XVector; local ry = cf.YVector; local rz = cf.ZVector
+    return cf.X, cf.Y, cf.Z, rx.X, ry.X, rz.X, rx.Y, ry.Y, rz.Y, rx.Z, ry.Z, rz.Z
 end
 
 local function numsToCf(a,b,c,d,e,f,g,h,i,j,k,l)
@@ -481,10 +727,14 @@ local function spawnGhosts(firstFrame)
                 for _, v in ipairs(clone:GetDescendants()) do
                     if v:IsA("Script") or v:IsA("LocalScript") then v:Destroy() end
                 end
+                for _, v in ipairs(clone:GetDescendants()) do
+                    if v:IsA("Animation") then v:Destroy() end
+                end
                 local cloneHum = clone:FindFirstChildOfClass("Humanoid")
                 if cloneHum then
                     local a = cloneHum:FindFirstChildOfClass("Animator")
                     if a then a:Destroy() end
+                    cloneHum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
                 end
                 local ca = clone:FindFirstChild("Animate")
                 if ca then ca:Destroy() end
@@ -592,7 +842,6 @@ RunService:BindToRenderStep("FlashbackCamera", Enum.RenderPriority.Camera.Value 
     if not FreecamEnabled then return end
     local ghostPivot = getGhostPivot()
     local mouseDelta = UserInputService:GetMouseDelta()
-
     if camMode == "Free" then
         local f = (UserInputService:IsKeyDown(Enum.KeyCode.W) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.S) and 1 or 0)
         local s = (UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.A) and 1 or 0)
@@ -606,10 +855,7 @@ RunService:BindToRenderStep("FlashbackCamera", Enum.RenderPriority.Camera.Value 
             smoothCamCF = smoothCamCF or targetCF
             smoothCamCF = smoothCamCF:Lerp(targetCF, math.clamp(dt * 8, 0, 1))
             cam.CFrame = smoothCamCF
-        else
-            cam.CFrame = targetCF
-        end
-
+        else cam.CFrame = targetCF end
     elseif camMode == "Lock" then
         if ghostPivot then
             rotY = rotY - mouseDelta.X * lookSens
@@ -626,11 +872,8 @@ RunService:BindToRenderStep("FlashbackCamera", Enum.RenderPriority.Camera.Value 
                 smoothCamCF = smoothCamCF or targetCF
                 smoothCamCF = smoothCamCF:Lerp(targetCF, math.clamp(dt * 6, 0, 1))
                 cam.CFrame = smoothCamCF
-            else
-                cam.CFrame = targetCF
-            end
+            else cam.CFrame = targetCF end
         end
-
     elseif camMode == "Orbit" then
         if ghostPivot then
             orbitAngle = orbitAngle + mouseDelta.X * lookSens
@@ -644,9 +887,7 @@ RunService:BindToRenderStep("FlashbackCamera", Enum.RenderPriority.Camera.Value 
                 smoothCamCF = smoothCamCF or targetCF
                 smoothCamCF = smoothCamCF:Lerp(targetCF, math.clamp(dt * 6, 0, 1))
                 cam.CFrame = smoothCamCF
-            else
-                cam.CFrame = targetCF
-            end
+            else cam.CFrame = targetCF end
         end
     end
 end)
@@ -714,7 +955,7 @@ titleLabel.BackgroundTransparency = 1
 titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleLabel.TextSize = 8
 titleLabel.Font = Enum.Font.GothamBold
-titleLabel.Text = "🎬 A Flashback (v15)      "
+titleLabel.Text = "🎬 A Flashback (v17)      "
 titleLabel.TextXAlignment = Enum.TextXAlignment.Center
 
 local minimized = false
@@ -795,7 +1036,11 @@ local page3 = Instance.new("Frame", frame)
 page3.LayoutOrder = 1; page3.Size = UDim2.new(1,0,0,0); page3.AutomaticSize = Enum.AutomaticSize.Y; page3.BackgroundTransparency = 1; page3.Visible = false
 local p3l = Instance.new("UIListLayout", page3); p3l.Padding = UDim.new(0,2); p3l.HorizontalAlignment = Enum.HorizontalAlignment.Center; p3l.SortOrder = Enum.SortOrder.LayoutOrder
 
-local o1,o2,o3 = 0,0,0
+local page4 = Instance.new("Frame", frame)
+page4.LayoutOrder = 1; page4.Size = UDim2.new(1,0,0,0); page4.AutomaticSize = Enum.AutomaticSize.Y; page4.BackgroundTransparency = 1; page4.Visible = false
+local p4l = Instance.new("UIListLayout", page4); p4l.Padding = UDim.new(0,2); p4l.HorizontalAlignment = Enum.HorizontalAlignment.Center; p4l.SortOrder = Enum.SortOrder.LayoutOrder
+
+local o1,o2,o3,o4 = 0,0,0,0
 
 local function makeBtn(parent, order, text, color, cb)
     local btn = Instance.new("TextButton", parent)
@@ -857,6 +1102,26 @@ local function makeFXBtn(parent, order, label, onColor, onToggle)
         local state = onToggle()
         btn.Text = label..": "..(state and "ON" or "OFF")
         btn.BackgroundColor3 = state and onColor or Color3.fromRGB(40,40,40)
+    end)
+    return btn
+end
+
+local activeWeatherBtn = nil
+local function makeWeatherBtn(parent, order, label, onColor, onApply)
+    local btn
+    btn = makeBtn(parent, order, label, nil, function()
+        if activeWeatherBtn == btn then
+            activeWeatherBtn = nil
+            btn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+            disableAllWeatherShaders()
+        else
+            if activeWeatherBtn then
+                activeWeatherBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+            end
+            activeWeatherBtn = btn
+            btn.BackgroundColor3 = onColor
+            onApply()
+        end
     end)
     return btn
 end
@@ -1066,65 +1331,259 @@ makeLbl(page2, o2, "  Check console for updates."); o2+=1
 
 -- PAGE 3 --
 makeLbl(page3, o3, "  COLOR GRADING"); o3+=1
-
 makeFXBtn(page3, o3, "🟤 Sepia", Color3.fromRGB(120,80,30), function()
     sepiaEnabled = not sepiaEnabled; sepiaCC.Enabled = sepiaEnabled; return sepiaEnabled
 end); o3+=1
-
 makeFXBtn(page3, o3, "⬜ Black & White", Color3.fromRGB(60,60,60), function()
     bwEnabled = not bwEnabled; bwCC.Enabled = bwEnabled; return bwEnabled
 end); o3+=1
-
 makeFXBtn(page3, o3, "📼 VHS", Color3.fromRGB(100,40,100), function()
     vhsEnabled = not vhsEnabled; vhsCC.Enabled = vhsEnabled; return vhsEnabled
 end); o3+=1
-
 makeFXBtn(page3, o3, "🌅 Sunset", Color3.fromRGB(150,80,20), function()
     sunsetEnabled = not sunsetEnabled; sunsetCC.Enabled = sunsetEnabled; return sunsetEnabled
 end); o3+=1
-
 makeFXBtn(page3, o3, "🌈 Neon/Retrowave", Color3.fromRGB(100,20,160), function()
     neonEnabled = not neonEnabled; neonCC.Enabled = neonEnabled; neonBloom.Enabled = neonEnabled; return neonEnabled
 end); o3+=1
-
 makeSep(page3, o3); o3+=1
 makeLbl(page3, o3, "  ATMOSPHERE"); o3+=1
-
 makeFXBtn(page3, o3, "🌫 Fog", Color3.fromRGB(60,80,100), function()
     setFog(not fogEnabled); return fogEnabled
 end); o3+=1
-
 makeFXBtn(page3, o3, "🔍 Depth of Field", Color3.fromRGB(40,80,120), function()
     dofEnabled = not dofEnabled; dofEffect.Enabled = dofEnabled; return dofEnabled
 end); o3+=1
-
 makeSep(page3, o3); o3+=1
 makeLbl(page3, o3, "  CINEMATIC"); o3+=1
-
 makeFXBtn(page3, o3, "🎬 Cine Bars", Color3.fromRGB(30,30,30), function()
     cineBarsEnabled = not cineBarsEnabled
     cineBarsTop.Visible = cineBarsEnabled
     cineBarsBot.Visible = cineBarsEnabled
     return cineBarsEnabled
 end); o3+=1
-
 makeFXBtn(page3, o3, "🕶 Vignette", Color3.fromRGB(30,30,60), function()
     vignetteEnabled = not vignetteEnabled
-    vignetteFrame.Visible = vignetteEnabled
+    vignetteCC.Enabled = vignetteEnabled
     return vignetteEnabled
 end); o3+=1
-
 makeFXBtn(page3, o3, "📽 Film Grain", Color3.fromRGB(50,50,50), function()
     filmGrainEnabled = not filmGrainEnabled
     if not filmGrainEnabled then grainFrame.Visible = false end
     return filmGrainEnabled
 end); o3+=1
-
 makeFXBtn(page3, o3, "💓 Heartbeat Pulse", Color3.fromRGB(120,20,40), function()
     heartbeatEnabled = not heartbeatEnabled
     if not heartbeatEnabled then heartbeatCC.Enabled = false end
     return heartbeatEnabled
 end); o3+=1
+
+-- PAGE 4 --
+makeLbl(page4, o4, "  PARTICLES"); o4+=1
+local followBtn
+followBtn = makeBtn(page4, o4, "📍 Particles: Follow Cam", nil, function()
+    weatherParticlesFollow = not weatherParticlesFollow
+    followBtn.Text = weatherParticlesFollow and "📍 Particles: Follow Cam" or "🌍 Particles: World Fixed"
+    followBtn.BackgroundColor3 = weatherParticlesFollow and Color3.fromRGB(25,80,120) or Color3.fromRGB(60,50,20)
+end); o4+=1
+
+makeSep(page4, o4); o4+=1
+makeLbl(page4, o4, "  WEATHER"); o4+=1
+
+makeWeatherBtn(page4, o4, "🌧 Rain", Color3.fromRGB(30,60,120), function()
+    applyWeather({
+        rain = 600,
+        cc = {tint=Color3.fromRGB(180,200,255), brightness=-0.1, contrast=0.1},
+        fog = {e=400, s=50, c=Color3.fromRGB(150,160,180)},
+    })
+    rainEnabled = true
+end); o4+=1
+
+makeWeatherBtn(page4, o4, "⛈ Thunderstorm", Color3.fromRGB(30,30,80), function()
+    applyWeather({
+        rain = 1000,
+        cc = {tint=Color3.fromRGB(150,160,200), brightness=-0.2, contrast=0.2},
+        fog = {e=200, s=20, c=Color3.fromRGB(80,80,100)},
+        blur = 2,
+    })
+    rainEnabled = true
+    thunderEnabled = true
+end); o4+=1
+
+makeWeatherBtn(page4, o4, "🌨 Snow", Color3.fromRGB(160,200,220), function()
+    applyWeather({
+        snow = 300,
+        cc = {tint=Color3.fromRGB(210,230,255), brightness=0.05, saturation=-0.3},
+        fog = {e=300, s=30, c=Color3.fromRGB(200,210,220)},
+    })
+    snowEnabled = true
+end); o4+=1
+
+makeWeatherBtn(page4, o4, "🌪 Blizzard", Color3.fromRGB(100,140,180), function()
+    applyWeather({
+        snow = 1000,
+        cc = {tint=Color3.fromRGB(200,220,255), brightness=0.1, saturation=-0.5, contrast=0.2},
+        fog = {e=80, s=5, c=Color3.fromRGB(220,230,240)},
+        blur = 3,
+    })
+    blizzardEnabled = true
+    snowEnabled = true
+end); o4+=1
+
+makeWeatherBtn(page4, o4, "🏜 Sandstorm", Color3.fromRGB(160,110,30), function()
+    applyWeather({
+        sand = 700,
+        cc = {tint=Color3.fromRGB(255,200,100), brightness=-0.05, saturation=-0.2, contrast=0.1},
+        fog = {e=100, s=10, c=Color3.fromRGB(200,160,80)},
+        blur = 2,
+    })
+    sandstormEnabled = true
+end); o4+=1
+
+makeSep(page4, o4); o4+=1
+makeLbl(page4, o4, "  TIME OF DAY"); o4+=1
+
+makeWeatherBtn(page4, o4, "🌅 Dawn", Color3.fromRGB(180,100,40), function()
+    applyWeather({
+        cc = {tint=Color3.fromRGB(255,200,150), brightness=0.05, saturation=0.2},
+        clock = 6,
+        ambient = Color3.fromRGB(180,120,80),
+        outdoor = Color3.fromRGB(200,140,100),
+    })
+    dawnEnabled = true
+end); o4+=1
+
+makeWeatherBtn(page4, o4, "🌇 Dusk", Color3.fromRGB(160,60,20), function()
+    applyWeather({
+        cc = {tint=Color3.fromRGB(255,160,80), brightness=-0.05, saturation=0.3},
+        clock = 19,
+        ambient = Color3.fromRGB(160,80,40),
+        outdoor = Color3.fromRGB(180,100,60),
+    })
+    duskEnabled = true
+end); o4+=1
+
+makeWeatherBtn(page4, o4, "🌃 Midnight", Color3.fromRGB(10,10,60), function()
+    applyWeather({
+        cc = {tint=Color3.fromRGB(80,90,160), brightness=-0.3, contrast=0.2, saturation=-0.3},
+        clock = 0,
+        ambient = Color3.fromRGB(10,10,40),
+        outdoor = Color3.fromRGB(15,15,50),
+        brightness = 0.1,
+    })
+    midnightEnabled = true
+end); o4+=1
+
+makeWeatherBtn(page4, o4, "☀️ Midday", Color3.fromRGB(200,180,60), function()
+    applyWeather({
+        cc = {tint=Color3.fromRGB(255,250,220), brightness=0.15, contrast=0.1, saturation=0.1},
+        clock = 12,
+        brightness = 3,
+        ambient = Color3.fromRGB(180,180,180),
+        outdoor = Color3.fromRGB(200,200,200),
+    })
+    middayEnabled = true
+end); o4+=1
+
+makeWeatherBtn(page4, o4, "🌑 Eclipse", Color3.fromRGB(40,0,0), function()
+    applyWeather({
+        cc = {tint=Color3.fromRGB(180,60,60), brightness=-0.4, contrast=0.3, saturation=-0.2},
+        clock = 12,
+        brightness = 0.2,
+        ambient = Color3.fromRGB(40,10,10),
+        outdoor = Color3.fromRGB(50,15,15),
+        fog = {e=500, s=100, c=Color3.fromRGB(80,20,20)},
+    })
+    eclipseEnabled = true
+end); o4+=1
+
+makeSep(page4, o4); o4+=1
+makeLbl(page4, o4, "  ENVIRONMENT"); o4+=1
+
+makeWeatherBtn(page4, o4, "🌊 Underwater", Color3.fromRGB(0,60,120), function()
+    applyWeather({
+        cc = {tint=Color3.fromRGB(60,140,200), brightness=-0.1, saturation=0.2, contrast=0.1},
+        fog = {e=150, s=10, c=Color3.fromRGB(0,80,140)},
+        blur = 4,
+        bloom = {i=0.5, s=20, t=0.8},
+    })
+    underwaterEnabled = true
+end); o4+=1
+
+makeWeatherBtn(page4, o4, "❄️ Arctic Freeze", Color3.fromRGB(160,200,255), function()
+    applyWeather({
+        cc = {tint=Color3.fromRGB(180,220,255), brightness=0.1, saturation=-0.6, contrast=0.2},
+        fog = {e=200, s=20, c=Color3.fromRGB(200,220,240)},
+        brightness = 1.5,
+    })
+    arcticEnabled = true
+end); o4+=1
+
+makeWeatherBtn(page4, o4, "🎮 Retro/8-bit", Color3.fromRGB(0,120,0), function()
+    applyWeather({
+        cc = {tint=Color3.fromRGB(100,255,100), brightness=0, saturation=2, contrast=0.8},
+    })
+    retroEnabled = true
+end); o4+=1
+
+makeWeatherBtn(page4, o4, "📺 Old TV", Color3.fromRGB(60,60,60), function()
+    applyWeather({})
+    oldtvEnabled = true
+    tvFlickerCC.Enabled = true
+    tvFrame.Visible = true
+end); o4+=1
+
+makeWeatherBtn(page4, o4, "🕯 Candlelight", Color3.fromRGB(140,80,10), function()
+    applyWeather({
+        fog = {e=200, s=30, c=Color3.fromRGB(120,80,40)},
+        brightness = 0.5,
+    })
+    candleEnabled = true
+    candleCC.Enabled = true
+end); o4+=1
+
+makeWeatherBtn(page4, o4, "🌌 Space", Color3.fromRGB(0,0,40), function()
+    applyWeather({
+        cc = {tint=Color3.fromRGB(80,80,160), brightness=-0.2, contrast=0.4, saturation=-0.3},
+        bloom = {i=2, s=40, t=0.5},
+        clock = 0,
+        brightness = 0.8,
+        ambient = Color3.fromRGB(40,40,80),
+        outdoor = Color3.fromRGB(30,30,60),
+    })
+    spaceEnabled = true
+end); o4+=1
+
+makeWeatherBtn(page4, o4, "💊 Acid Trip", Color3.fromRGB(180,0,180), function()
+    applyWeather({
+        bloom = {i=1.5, s=30, t=0.4},
+        blur = 1,
+    })
+    acidEnabled = true
+    acidCC.Enabled = true
+end); o4+=1
+
+makeWeatherBtn(page4, o4, "🩸 Blood Moon", Color3.fromRGB(100,0,0), function()
+    applyWeather({
+        cc = {tint=Color3.fromRGB(255,80,80), brightness=0.1, contrast=0.3, saturation=0.4},
+        fog = {e=500, s=80, c=Color3.fromRGB(140,20,20)},
+        clock = 0,
+        brightness = 1.5,
+        ambient = Color3.fromRGB(120,20,20),
+        outdoor = Color3.fromRGB(140,30,30),
+        bloom = {i=0.8, s=20, t=0.8},
+    })
+    bloodMoonEnabled = true
+end); o4+=1
+
+makeBtn(page4, o4, "✖ Clear Weather", Color3.fromRGB(80,30,30), function()
+    if activeWeatherBtn then
+        activeWeatherBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+        activeWeatherBtn = nil
+    end
+    disableAllWeatherShaders()
+    tvFrame.Visible = false
+end); o4+=1
 
 -- Nav
 local currentPage = 1
@@ -1154,9 +1613,13 @@ local function showPage(n)
     page1.Visible = n == 1
     page2.Visible = n == 2
     page3.Visible = n == 3
+    page4.Visible = n == 4
     backBtn.Visible = n > 1
-    nextBtn.Visible = n < 3
-    nextBtn.Text = n == 1 and "Page 2 →" or "Page 3 →"
+    nextBtn.Visible = n < 4
+    if n == 1 then nextBtn.Text = "Page 2 →"
+    elseif n == 2 then nextBtn.Text = "Page 3 →"
+    elseif n == 3 then nextBtn.Text = "Page 4 →"
+    end
 end
 
 nextBtn.MouseButton1Click:Connect(function() showPage(currentPage + 1) end)
@@ -1167,6 +1630,7 @@ minimizeBtn.MouseButton1Click:Connect(function()
     page1.Visible = not minimized
     page2.Visible = false
     page3.Visible = false
+    page4.Visible = false
     if not minimized then currentPage = 1 end
     navRow.Visible = not minimized
     minimizeBtn.Text = minimized and "▲" or "—"
@@ -1176,6 +1640,8 @@ closeBtn.MouseButton1Click:Connect(function()
     cleanupGhosts()
     setNightVision(false)
     setFog(false)
+    disableAllWeatherShaders()
+    weatherPart:Destroy()
     cam.FieldOfView = originalFOV
     motionBlur:Destroy()
     dofEffect:Destroy()
@@ -1183,4 +1649,4 @@ closeBtn.MouseButton1Click:Connect(function()
     sg:Destroy()
 end)
 
-print("A Flashback ready! R = Record P = Play F = Freecam X = Clear ←/→ = Step")
+print("A Flashback v17.2 (Client) ready! R = Record P = Play F = Freecam X = Clear ←/→ = Step")
