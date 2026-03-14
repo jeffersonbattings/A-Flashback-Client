@@ -1,3 +1,4 @@
+_G.FB={}
 local FB=_G.FB
 local Players=game:GetService("Players")
 local RunService=game:GetService("RunService")
@@ -30,8 +31,11 @@ local slotNames={"","","","",""}
 local weatherParticlesFollow=true
 local thunderEnabled,oldtvEnabled,candleEnabled,acidEnabled=false,false,false,false
 local camPathFrames,camPathRecording,camPathPlaying,camPathIndex,camPathSpeed={},false,false,1,1
+local autoSaveEnabled=false
+local bookmarks={}
+local inPoint,outPoint=nil,nil
 
-FB.replayData=replayData;FB.slotNames=slotNames;FB.camPathFrames=camPathFrames
+FB.replayData=replayData;FB.slotNames=slotNames;FB.camPathFrames=camPathFrames;FB.bookmarks=bookmarks
 FB.recording=function()return recording end
 FB.isPlaying=function()return isPlaying end
 FB.playbackSpeed=function()return playbackSpeed end;FB.setPlaybackSpeed=function(v)playbackSpeed=v end
@@ -47,6 +51,9 @@ FB.recordAll=function()return recordAll end;FB.setRecordAll=function(v)recordAll
 FB.weatherParticlesFollow=function()return weatherParticlesFollow end;FB.setWeatherParticlesFollow=function(v)weatherParticlesFollow=v end
 FB.camPathSpeed=function()return camPathSpeed end;FB.setCamPathSpeed=function(v)camPathSpeed=v end
 FB.camPathRecording=function()return camPathRecording end;FB.camPathPlaying=function()return camPathPlaying end
+FB.autoSaveEnabled=function()return autoSaveEnabled end;FB.setAutoSaveEnabled=function(v)autoSaveEnabled=v end
+FB.inPoint=function()return inPoint end;FB.setInPoint=function(v)inPoint=v end
+FB.outPoint=function()return outPoint end;FB.setOutPoint=function(v)outPoint=v end
 
 local bgMusic=Instance.new("Sound");bgMusic.Volume=0.5;bgMusic.Looped=true;bgMusic.Parent=workspace
 FB.bgMusic=bgMusic
@@ -79,7 +86,6 @@ local vignetteCC=makeCC(nil,0,0.25,-0.15)
 FB.sepiaCC=sepiaCC;FB.bwCC=bwCC;FB.vhsCC=vhsCC;FB.sunsetCC=sunsetCC
 FB.neonCC=neonCC;FB.neonBloom=neonBloom;FB.dofEffect=dofEffect
 FB.heartbeatCC=heartbeatCC;FB.tvFlickerCC=tvFlickerCC;FB.vignetteCC=vignetteCC
-
 FB.heartbeatEnabled=false;FB.filmGrainEnabled=false;FB.fogEnabled=false
 FB.dofEnabled=false;FB.cineBarsEnabled=false;FB.vignetteEnabled=false
 FB.sepiaEnabled=false;FB.bwEnabled=false;FB.vhsEnabled=false
@@ -92,23 +98,20 @@ local origClock=Lighting.ClockTime
 
 local weatherPart=Instance.new("Part");weatherPart.Size=Vector3.new(200,1,200);weatherPart.Anchored=true;weatherPart.CanCollide=false;weatherPart.Transparency=1;weatherPart.CastShadow=false;weatherPart.Name="FlashbackWeather";weatherPart.Parent=workspace
 
+local NS,NR,NSK=NumberSequence.new,NumberRange.new,NumberSequenceKeypoint.new
 local function makeEmitter(col,dir,spd,life,sz,spread)
 	local e=Instance.new("ParticleEmitter",weatherPart)
 	e.Texture="rbxassetid://6738435735";e.Rate=0;e.Speed=spd;e.Lifetime=life;e.Size=sz
-	e.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0.3),NumberSequenceKeypoint.new(1,0.6)})
-	e.Color=ColorSequence.new(col);e.EmissionDirection=dir;e.SpreadAngle=spread
-	e.RotSpeed=NumberRange.new(-45,45);e.Enabled=false;return e
+	e.Transparency=NS({NSK(0,0.3),NSK(1,0.6)});e.Color=ColorSequence.new(col)
+	e.EmissionDirection=dir;e.SpreadAngle=spread;e.RotSpeed=NR(-45,45);e.Enabled=false;return e
 end
-local NS=NumberSequence.new
-local NR=NumberRange.new
-local NSK=NumberSequenceKeypoint.new
 local rainEmitter=makeEmitter(Color3.fromRGB(180,200,255),Enum.NormalId.Bottom,NR(60,80),NR(0.5,1),NS({NSK(0,0.05),NSK(1,0.05)}),Vector2.new(5,5))
 rainEmitter.RotSpeed=NR(0,0);rainEmitter.Rotation=NR(90,90)
 local snowEmitter=makeEmitter(Color3.fromRGB(255,255,255),Enum.NormalId.Bottom,NR(8,15),NR(3,5),NS({NSK(0,0.12),NSK(1,0.08)}),Vector2.new(30,30))
 local sandEmitter=makeEmitter(Color3.fromRGB(200,160,80),Enum.NormalId.Front,NR(40,70),NR(0.8,1.5),NS({NSK(0,0.08),NSK(1,0.04)}),Vector2.new(15,15))
 
 RunService.Heartbeat:Connect(function()
-	if weatherParticlesFollow then weatherPart.CFrame=CFrame.new(cam.CFrame.Position+Vector3.new(0,20,0)) end
+	if weatherParticlesFollow then weatherPart.CFrame=CFrame.new(cam.CFrame.Position+Vector3.new(0,20,0))end
 end)
 
 local function stopParticles()
@@ -148,7 +151,7 @@ local function applyWeather(cfg)
 	if cfg.clock then Lighting.ClockTime=cfg.clock end
 	if cfg.rain then rainEmitter.Rate=cfg.rain;rainEmitter.Enabled=true end
 	if cfg.snow then snowEmitter.Rate=cfg.snow;snowEmitter.Enabled=true end
-	if cfg.sand then sandEmitter.Rate=cfg.sand;sandEmitter.Enabled=true;weatherPart.CFrame=weatherPart.CFrame*CFrame.Angles(0,0,math.rad(10)) end
+	if cfg.sand then sandEmitter.Rate=cfg.sand;sandEmitter.Enabled=true;weatherPart.CFrame=weatherPart.CFrame*CFrame.Angles(0,0,math.rad(10))end
 end
 FB.applyWeather=applyWeather
 
@@ -222,7 +225,6 @@ FB.splitStr=split
 local ji,jn,jc={},{},0
 local function gjid(name)
 	if not ji[name] then jc+=1;ji[name]=jc;jn[jc]=name end
-	return ji[name]
 end
 local function cfn(cf)
 	local x,y,z=cf.XVector,cf.YVector,cf.ZVector
@@ -298,12 +300,11 @@ end
 FB.cleanupGhosts=cleanupGhosts
 
 local function updateFL()
-	if FB.frameCountLabel then
-		local tot=#replayData;local s=math.floor(tot/60);local f=tot%60
-		if isPlaying then FB.frameCountLabel.Text=("▶ %d / %d  |  %ds %df"):format(math.floor(playbackIndex),tot,s,f)
-		elseif recording then FB.frameCountLabel.Text=("⏺ %d  |  %ds %df"):format(tot,math.floor(tot/60),tot%60)
-		else FB.frameCountLabel.Text=("Frames: %d  |  %ds %df"):format(tot,s,f)end
-	end
+	if not FB.frameCountLabel then return end
+	local tot=#replayData;local s=math.floor(tot/60);local f=tot%60
+	if isPlaying then FB.frameCountLabel.Text=("▶ %d / %d  |  %ds %df"):format(math.floor(playbackIndex),tot,s,f)
+	elseif recording then FB.frameCountLabel.Text=("⏺ %d  |  %ds %df"):format(tot,math.floor(tot/60),tot%60)
+	else FB.frameCountLabel.Text=("Frames: %d  |  %ds %df"):format(tot,s,f)end
 end
 FB.updateFrameLabel=updateFL
 
@@ -410,7 +411,7 @@ local function enableFC(on)
 	FreecamEnabled=on
 	if on then Controls:Disable();cam.CameraType=Enum.CameraType.Scriptable;smoothCamCF=cam.CFrame;local _,y,_=cam.CFrame:ToEulerAnglesYXZ();rotY=y
 	else Controls:Enable();cam.CameraType=Enum.CameraType.Custom;moveVector=Vector3.new(0,0,0);camMode="Free" end
-	if FB.freecamBtn then FB.freecamBtn.Text="🎥 Freecam: "..(on and "ON"or"OFF");FB.freecamBtn.BackgroundColor3=on and Color3.fromRGB(25,70,140)or Color3.fromRGB(40,40,40)end
+	if FB.freecamBtn then FB.freecamBtn.Text="🎥 Freecam: "..(on and"ON"or"OFF");FB.freecamBtn.BackgroundColor3=on and Color3.fromRGB(25,70,140)or Color3.fromRGB(40,40,40)end
 end
 FB.enableFreecam=enableFC
 
@@ -476,8 +477,8 @@ local function playCamPath()
 	task.spawn(function()
 		while camPathPlaying and camPathIndex<#camPathFrames do
 			camPathIndex=math.min(camPathIndex+camPathSpeed,#camPathFrames)
-			local a=math.floor(camPathIndex);local b=math.min(a+1,#camPathFrames)
-			cam.CFrame=camPathFrames[a]:Lerp(camPathFrames[b],camPathIndex-a)
+			local a=math.floor(camPathIndex)
+			cam.CFrame=camPathFrames[a]:Lerp(camPathFrames[math.min(a+1,#camPathFrames)],camPathIndex-a)
 			task.wait(1/60)
 		end
 		camPathPlaying=false
@@ -485,6 +486,18 @@ local function playCamPath()
 	end)
 end
 FB.startCamPathRec=startCPR;FB.stopCamPathRec=stopCPR;FB.playCamPath=playCamPath
+
+task.spawn(function()
+	while true do
+		task.wait(10)
+		if autoSaveEnabled and #replayData>0 then
+			pcall(function()
+				local ok,res=pcall(serialize,replayData)
+				if ok then writefile("flashback_slot1.txt",res);warn("Auto-saved! "..#replayData.." frames")end
+			end)
+		end
+	end
+end)
 
 UIS.InputBegan:Connect(function(inp,proc)
 	if proc then return end
@@ -504,370 +517,447 @@ UIS.InputBegan:Connect(function(inp,proc)
 	end
 end)
 
-print("FB v18 Part 1 loaded. Run Part 2.")
+FB.ready=true
+print("FB v19 Part 1 loaded OK. Run Part 2.")
 
+
+if not _G.FB then warn("FB is nil - did Part 1 run?")return end
 local FB=_G.FB
-if not FB then warn("Run Part 1 first!")return end
-local lp=FB.lp;local cam=FB.cam;local HS=FB.HS
+repeat task.wait()until FB.ready
+local lp,cam,HS=FB.lp,FB.cam,FB.HS
 local UIS=game:GetService("UserInputService")
+local RS=game:GetService("RunService")
+local C3=Color3.fromRGB
 local isMobile=UIS.TouchEnabled and not UIS.KeyboardEnabled
 
 local sg=Instance.new("ScreenGui",lp.PlayerGui)
-sg.Name="FlashbackUI";sg.ResetOnSpawn=false;sg.ScreenInsets=Enum.ScreenInsets.None
-FB.sg=sg
+sg.Name="FlashbackUI";sg.ResetOnSpawn=false;sg.ScreenInsets=Enum.ScreenInsets.None;FB.sg=sg
 
-local tvFrame=Instance.new("Frame",sg)
-tvFrame.Size=UDim2.new(1,0,1,0);tvFrame.BackgroundTransparency=1;tvFrame.BorderSizePixel=0;tvFrame.ZIndex=8;tvFrame.Visible=false
-FB.tvFrame=tvFrame
-for i=0,59 do local l=Instance.new("Frame",tvFrame);l.Size=UDim2.new(1,0,1/60*0.4,0);l.Position=UDim2.new(0,0,i/60,0);l.BackgroundColor3=Color3.fromRGB(0,0,0);l.BackgroundTransparency=0.7;l.BorderSizePixel=0;l.ZIndex=8 end
+do
+	local f=Instance.new("Frame",sg);f.Size=UDim2.new(1,0,1,0);f.BackgroundTransparency=1;f.BorderSizePixel=0;f.ZIndex=8;f.Visible=false;FB.tvFrame=f
+	for i=0,59 do local l=Instance.new("Frame",f);l.Size=UDim2.new(1,0,1/60*0.4,0);l.Position=UDim2.new(0,0,i/60,0);l.BackgroundColor3=C3(0,0,0);l.BackgroundTransparency=0.7;l.BorderSizePixel=0;l.ZIndex=8 end
+end
 
 local bh=isMobile and 0.08 or 0.06
-local function makeBar(ypos)
-	local b=Instance.new("Frame",sg);b.Size=UDim2.new(1,0,bh,0);b.Position=UDim2.new(0,0,ypos,0)
-	b.BackgroundColor3=Color3.fromRGB(0,0,0);b.BorderSizePixel=0;b.ZIndex=5;b.Visible=false;return b
+local cineBarsTop,cineBarsBot
+do
+	local function mb(y)local b=Instance.new("Frame",sg);b.Size=UDim2.new(1,0,bh,0);b.Position=UDim2.new(0,0,y,0);b.BackgroundColor3=C3(0,0,0);b.BorderSizePixel=0;b.ZIndex=5;b.Visible=false;return b end
+	cineBarsTop=mb(0);cineBarsBot=mb(1-bh)
 end
-local cineBarsTop=makeBar(0);local cineBarsBot=makeBar(1-bh)
 
 local grainFrame=Instance.new("Frame",sg);grainFrame.Size=UDim2.new(1,0,1,0);grainFrame.BackgroundTransparency=1;grainFrame.BorderSizePixel=0;grainFrame.ZIndex=7;grainFrame.Visible=false
 local grainDots={}
-for row=0,49 do for col=0,79 do
-	local d=Instance.new("Frame",grainFrame);d.Size=UDim2.new(1/80,0,1/50,0);d.Position=UDim2.new(col/80,0,row/50,0)
-	d.BorderSizePixel=0;d.BackgroundColor3=Color3.fromRGB(0,0,0);d.BackgroundTransparency=1;d.ZIndex=7
-	grainDots[#grainDots+1]=d
+for r=0,49 do for c=0,79 do
+	local d=Instance.new("Frame",grainFrame);d.Size=UDim2.new(1/80,0,1/50,0);d.Position=UDim2.new(c/80,0,r/50,0);d.BorderSizePixel=0;d.BackgroundColor3=C3(0,0,0);d.BackgroundTransparency=1;d.ZIndex=7;grainDots[#grainDots+1]=d
 end end
 task.spawn(function()
 	while true do task.wait(0.06)
 		if FB.filmGrainEnabled then grainFrame.Visible=true
-			for _,d in ipairs(grainDots)do if math.random()>0.85 then d.BackgroundColor3=Color3.fromRGB(255,255,255);d.BackgroundTransparency=0.3+math.random()*0.4 else d.BackgroundTransparency=1 end end
+			for _,d in ipairs(grainDots)do if math.random()>0.85 then d.BackgroundColor3=C3(255,255,255);d.BackgroundTransparency=0.3+math.random()*0.4 else d.BackgroundTransparency=1 end end
 		else grainFrame.Visible=false end
 	end
 end)
 
-local frame=Instance.new("Frame",sg)
-frame.Size=UDim2.new(0,160,0,0);frame.AutomaticSize=Enum.AutomaticSize.Y
-frame.Position=UDim2.new(0,0,0.5,-180);frame.BackgroundColor3=Color3.fromRGB(18,18,18);frame.BorderSizePixel=0
-Instance.new("UICorner",frame).CornerRadius=UDim.new(0,6)
-local pad=Instance.new("UIPadding",frame);pad.PaddingTop=UDim.new(0,3);pad.PaddingBottom=UDim.new(0,3);pad.PaddingLeft=UDim.new(0,3);pad.PaddingRight=UDim.new(0,3)
-local ml=Instance.new("UIListLayout",frame);ml.Padding=UDim.new(0,2);ml.HorizontalAlignment=Enum.HorizontalAlignment.Center;ml.SortOrder=Enum.SortOrder.LayoutOrder
-
-local titleBar=Instance.new("Frame",frame);titleBar.LayoutOrder=0;titleBar.Size=UDim2.new(1,0,0,22);titleBar.BackgroundColor3=Color3.fromRGB(28,28,28);titleBar.BorderSizePixel=0
-Instance.new("UICorner",titleBar).CornerRadius=UDim.new(0,5)
-local recDot=Instance.new("Frame",titleBar);recDot.Size=UDim2.new(0,6,0,6);recDot.Position=UDim2.new(0,5,0.5,-3);recDot.BackgroundColor3=Color3.fromRGB(80,80,80);recDot.BorderSizePixel=0;Instance.new("UICorner",recDot).CornerRadius=UDim.new(1,0)
-local recLbl=Instance.new("TextLabel",titleBar);recLbl.Size=UDim2.new(0,30,1,0);recLbl.Position=UDim2.new(0,14,0,0);recLbl.BackgroundTransparency=1;recLbl.TextColor3=Color3.fromRGB(100,100,100);recLbl.TextSize=8;recLbl.Font=Enum.Font.GothamMedium;recLbl.Text="OFF";recLbl.TextXAlignment=Enum.TextXAlignment.Left
-local titleLbl=Instance.new("TextLabel",titleBar);titleLbl.Size=UDim2.new(1,-90,1,0);titleLbl.Position=UDim2.new(0,48,0,0);titleLbl.BackgroundTransparency=1;titleLbl.TextColor3=Color3.fromRGB(255,255,255);titleLbl.TextSize=8;titleLbl.Font=Enum.Font.GothamBold;titleLbl.Text="🎬 A Flashback (v6.3)     ";titleLbl.TextXAlignment=Enum.TextXAlignment.Center
-local function makeTitleBtn(x,col,txt)
-	local b=Instance.new("TextButton",titleBar);b.Size=UDim2.new(0,18,0,14);b.Position=UDim2.new(1,x,0.5,-7)
-	b.BackgroundColor3=col;b.TextColor3=Color3.fromRGB(255,255,255);b.TextSize=10;b.Font=Enum.Font.GothamBold;b.Text=txt;b.AutoButtonColor=true
-	Instance.new("UICorner",b).CornerRadius=UDim.new(0,3);return b
+-- Scrubber
+local scrubTrack,scrubFill,scrubHandle,scrubTimeLbl,inMarker,outMarker
+do
+	local ssg=Instance.new("ScreenGui",lp.PlayerGui);ssg.Name="FlashbackScrubber";ssg.ResetOnSpawn=false;ssg.ScreenInsets=Enum.ScreenInsets.None;FB.scrubberGui=ssg
+	local bg=Instance.new("Frame",ssg);bg.Size=UDim2.new(0,260,0,28);bg.Position=UDim2.new(0.5,-130,0,8);bg.BackgroundColor3=C3(18,18,18);bg.BorderSizePixel=0;Instance.new("UICorner",bg).CornerRadius=UDim.new(0,6)
+	scrubTimeLbl=Instance.new("TextLabel",bg);scrubTimeLbl.Size=UDim2.new(1,0,0,10);scrubTimeLbl.Position=UDim2.new(0,0,0,3);scrubTimeLbl.BackgroundTransparency=1;scrubTimeLbl.TextColor3=C3(180,180,180);scrubTimeLbl.TextSize=7;scrubTimeLbl.Font=Enum.Font.GothamMedium;scrubTimeLbl.Text="0:00 / 0:00"
+	scrubTrack=Instance.new("Frame",bg);scrubTrack.Size=UDim2.new(1,-16,0,4);scrubTrack.Position=UDim2.new(0,8,0.5,4);scrubTrack.BackgroundColor3=C3(50,50,50);scrubTrack.BorderSizePixel=0;Instance.new("UICorner",scrubTrack).CornerRadius=UDim.new(1,0)
+	scrubFill=Instance.new("Frame",scrubTrack);scrubFill.Size=UDim2.new(0,0,1,0);scrubFill.BackgroundColor3=C3(100,160,255);scrubFill.BorderSizePixel=0;Instance.new("UICorner",scrubFill).CornerRadius=UDim.new(1,0)
+	scrubHandle=Instance.new("TextButton",scrubTrack);scrubHandle.Size=UDim2.new(0,12,0,12);scrubHandle.AnchorPoint=Vector2.new(0.5,0.5);scrubHandle.Position=UDim2.new(0,0,0.5,0);scrubHandle.BackgroundColor3=C3(255,255,255);scrubHandle.Text="";scrubHandle.AutoButtonColor=false;scrubHandle.BorderSizePixel=0;Instance.new("UICorner",scrubHandle).CornerRadius=UDim.new(1,0)
+	local function mkr(col)local m=Instance.new("Frame",scrubTrack);m.Size=UDim2.new(0,2,1,4);m.AnchorPoint=Vector2.new(0.5,0.5);m.Position=UDim2.new(0,0,0.5,0);m.BackgroundColor3=col;m.BorderSizePixel=0;m.Visible=false;return m end
+	inMarker=mkr(C3(80,255,80));outMarker=mkr(C3(255,80,80))
 end
-local minimizeBtn=makeTitleBtn(-40,Color3.fromRGB(55,55,55),"—")
-local closeBtn=makeTitleBtn(-20,Color3.fromRGB(160,35,35),"X")
 
-local dragging,dragStartMouse,dragStartPos=false,nil,nil
-titleBar.InputBegan:Connect(function(inp)
-	if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
-		dragging=true;dragStartMouse=inp.Position;dragStartPos=frame.Position
-		inp.Changed:Connect(function()if inp.UserInputState==Enum.UserInputState.End then dragging=false end end)
+local bmDots={}
+local function refreshBMDots()
+	for _,d in ipairs(bmDots)do d:Destroy()end;bmDots={}
+	local tot=#FB.replayData;if tot<2 then return end
+	for _,bm in ipairs(FB.bookmarks)do
+		local d=Instance.new("Frame",scrubTrack);d.Size=UDim2.new(0,4,0,8);d.AnchorPoint=Vector2.new(0.5,0.5);d.Position=UDim2.new((bm-1)/math.max(tot-1,1),0,0.5,0);d.BackgroundColor3=C3(255,200,0);d.BorderSizePixel=0;Instance.new("UICorner",d).CornerRadius=UDim.new(1,0);bmDots[#bmDots+1]=d
 	end
-end)
-UIS.InputChanged:Connect(function(inp)
-	if not dragging then return end
-	if inp.UserInputType==Enum.UserInputType.MouseMovement or inp.UserInputType==Enum.UserInputType.Touch then
-		local d=inp.Position-dragStartMouse
-		frame.Position=UDim2.new(dragStartPos.X.Scale,dragStartPos.X.Offset+d.X,dragStartPos.Y.Scale,dragStartPos.Y.Offset+d.Y)
-	end
+end
+FB.refreshBookmarkDots=refreshBMDots
+
+do
+	local drag=false
+	scrubHandle.InputBegan:Connect(function(i)if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then drag=true end end)
+	UIS.InputEnded:Connect(function(i)if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then drag=false end end)
+	UIS.InputChanged:Connect(function(i)
+		if not drag then return end
+		if i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch then
+			local tot=#FB.replayData;if tot<1 then return end
+			local rel=math.clamp((i.Position.X-scrubTrack.AbsolutePosition.X)/scrubTrack.AbsoluteSize.X,0,1)
+			FB.setPlaybackSpeed(0);FB.setPlaybackIndex(math.clamp(math.floor(rel*(tot-1))+1,1,tot))
+		end
+	end)
+end
+
+RS.Heartbeat:Connect(function()
+	local tot=#FB.replayData;if tot<2 then scrubFill.Size=UDim2.new(0,0,1,0);scrubHandle.Position=UDim2.new(0,0,0.5,0);return end
+	local rel=(FB.playbackIndex()-1)/math.max(tot-1,1)
+	scrubFill.Size=UDim2.new(rel,0,1,0);scrubHandle.Position=UDim2.new(rel,0,0.5,0)
+	local function ms(f)return("%d:%02d"):format(math.floor(f/3600),math.floor(f/60)%60)end
+	scrubTimeLbl.Text=ms(FB.playbackIndex()).." / "..ms(tot)
+	local ip,op=FB.inPoint(),FB.outPoint()
+	inMarker.Visible=ip~=nil;if ip then inMarker.Position=UDim2.new((ip-1)/math.max(tot-1,1),0,0.5,0)end
+	outMarker.Visible=op~=nil;if op then outMarker.Position=UDim2.new((op-1)/math.max(tot-1,1),0,0.5,0)end
 end)
 
-local blinkVisible=true
+-- Main frame
+local frame=Instance.new("Frame",sg);frame.Size=UDim2.new(0,160,0,0);frame.AutomaticSize=Enum.AutomaticSize.Y;frame.Position=UDim2.new(0,0,0.5,-180);frame.BackgroundColor3=C3(18,18,18);frame.BorderSizePixel=0;Instance.new("UICorner",frame).CornerRadius=UDim.new(0,6)
+do local p=Instance.new("UIPadding",frame);p.PaddingTop=UDim.new(0,3);p.PaddingBottom=UDim.new(0,3);p.PaddingLeft=UDim.new(0,3);p.PaddingRight=UDim.new(0,3)end
+do local l=Instance.new("UIListLayout",frame);l.Padding=UDim.new(0,2);l.HorizontalAlignment=Enum.HorizontalAlignment.Center;l.SortOrder=Enum.SortOrder.LayoutOrder end
+
+local titleBar=Instance.new("Frame",frame);titleBar.LayoutOrder=0;titleBar.Size=UDim2.new(1,0,0,22);titleBar.BackgroundColor3=C3(28,28,28);titleBar.BorderSizePixel=0;Instance.new("UICorner",titleBar).CornerRadius=UDim.new(0,5)
+do
+	local d=Instance.new("Frame",titleBar);d.Size=UDim2.new(0,6,0,6);d.Position=UDim2.new(0,5,0.5,-3);d.BackgroundColor3=C3(80,80,80);d.BorderSizePixel=0;Instance.new("UICorner",d).CornerRadius=UDim.new(1,0);FB._recDot=d
+	local rl=Instance.new("TextLabel",titleBar);rl.Size=UDim2.new(0,30,1,0);rl.Position=UDim2.new(0,14,0,0);rl.BackgroundTransparency=1;rl.TextColor3=C3(100,100,100);rl.TextSize=8;rl.Font=Enum.Font.GothamMedium;rl.Text="OFF";rl.TextXAlignment=Enum.TextXAlignment.Left;FB._recLbl=rl
+	local tl=Instance.new("TextLabel",titleBar);tl.Size=UDim2.new(1,-90,1,0);tl.Position=UDim2.new(0,48,0,0);tl.BackgroundTransparency=1;tl.TextColor3=C3(255,255,255);tl.TextSize=8;tl.Font=Enum.Font.GothamBold;tl.Text="🎬 A Flashback (v7.2)     ";tl.TextXAlignment=Enum.TextXAlignment.Center
+end
+local function mkTBtn(x,col,txt)local b=Instance.new("TextButton",titleBar);b.Size=UDim2.new(0,18,0,14);b.Position=UDim2.new(1,x,0.5,-7);b.BackgroundColor3=col;b.TextColor3=C3(255,255,255);b.TextSize=10;b.Font=Enum.Font.GothamBold;b.Text=txt;b.AutoButtonColor=true;Instance.new("UICorner",b).CornerRadius=UDim.new(0,3);return b end
+local minimizeBtn=mkTBtn(-40,C3(55,55,55),"—");local closeBtn=mkTBtn(-20,C3(160,35,35),"X")
+
+do
+	local drag,dm,dp=false,nil,nil
+	titleBar.InputBegan:Connect(function(i)
+		if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+			drag=true;dm=i.Position;dp=frame.Position
+			i.Changed:Connect(function()if i.UserInputState==Enum.UserInputState.End then drag=false end end)
+		end
+	end)
+	UIS.InputChanged:Connect(function(i)
+		if not drag then return end
+		if i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch then
+			local d=i.Position-dm;frame.Position=UDim2.new(dp.X.Scale,dp.X.Offset+d.X,dp.Y.Scale,dp.Y.Offset+d.Y)
+		end
+	end)
+end
+
+local blink=true
 local function setRecInd(on)
-	if on then recDot.BackgroundColor3=Color3.fromRGB(220,40,40);recLbl.TextColor3=Color3.fromRGB(220,40,40);recLbl.Text="REC"
-	else recDot.BackgroundColor3=Color3.fromRGB(80,80,80);recLbl.TextColor3=Color3.fromRGB(100,100,100);recLbl.Text="OFF";blinkVisible=true end
+	if on then FB._recDot.BackgroundColor3=C3(220,40,40);FB._recLbl.TextColor3=C3(220,40,40);FB._recLbl.Text="REC"
+	else FB._recDot.BackgroundColor3=C3(80,80,80);FB._recLbl.TextColor3=C3(100,100,100);FB._recLbl.Text="OFF";blink=true end
 end
 task.spawn(function()
 	while true do task.wait(0.5)
-		if FB.recording()then blinkVisible=not blinkVisible;recDot.BackgroundColor3=blinkVisible and Color3.fromRGB(220,40,40)or Color3.fromRGB(100,20,20)end
+		if FB.recording()then blink=not blink;FB._recDot.BackgroundColor3=blink and C3(220,40,40)or C3(100,20,20)end
 	end
 end)
 
-local function makePage()
+local function mkPage()
 	local p=Instance.new("Frame",frame);p.LayoutOrder=1;p.Size=UDim2.new(1,0,0,0);p.AutomaticSize=Enum.AutomaticSize.Y;p.BackgroundTransparency=1;p.Visible=false
 	local l=Instance.new("UIListLayout",p);l.Padding=UDim.new(0,2);l.HorizontalAlignment=Enum.HorizontalAlignment.Center;l.SortOrder=Enum.SortOrder.LayoutOrder
 	return p
 end
-local pages={}
-for i=1,6 do pages[i]=makePage()end
-pages[1].Visible=true
-local o={0,0,0,0,0,0}
+local pages={};for i=1,8 do pages[i]=mkPage()end;pages[1].Visible=true
+local o={0,0,0,0,0,0,0,0}
 
-local C3=Color3.fromRGB
-local function makeBtn(par,ord,txt,col,cb)
-	local b=Instance.new("TextButton",par);b.LayoutOrder=ord;b.Size=UDim2.new(1,0,0,20)
-	b.BackgroundColor3=col or C3(40,40,40);b.TextColor3=C3(255,255,255);b.TextSize=9
-	b.Font=Enum.Font.GothamMedium;b.Text=txt;b.AutoButtonColor=true
-	Instance.new("UICorner",b).CornerRadius=UDim.new(0,4)
-	if cb then b.MouseButton1Click:Connect(cb)end;return b
+local function mkB(par,ord,txt,col,cb)
+	local b=Instance.new("TextButton",par);b.LayoutOrder=ord;b.Size=UDim2.new(1,0,0,20);b.BackgroundColor3=col or C3(40,40,40);b.TextColor3=C3(255,255,255);b.TextSize=9;b.Font=Enum.Font.GothamMedium;b.Text=txt;b.AutoButtonColor=true;Instance.new("UICorner",b).CornerRadius=UDim.new(0,4);if cb then b.MouseButton1Click:Connect(cb)end;return b
 end
-local function makeLbl(par,ord,txt)
-	local l=Instance.new("TextLabel",par);l.LayoutOrder=ord;l.Size=UDim2.new(1,0,0,11);l.BackgroundTransparency=1
-	l.TextColor3=C3(100,100,100);l.TextSize=8;l.Font=Enum.Font.GothamBold;l.Text=txt;l.TextXAlignment=Enum.TextXAlignment.Left;return l
+local function mkL(par,ord,txt)
+	local l=Instance.new("TextLabel",par);l.LayoutOrder=ord;l.Size=UDim2.new(1,0,0,11);l.BackgroundTransparency=1;l.TextColor3=C3(100,100,100);l.TextSize=8;l.Font=Enum.Font.GothamBold;l.Text=txt;l.TextXAlignment=Enum.TextXAlignment.Left;return l
 end
-local function makeSep(par,ord)
-	local s=Instance.new("Frame",par);s.LayoutOrder=ord;s.Size=UDim2.new(1,0,0,1);s.BackgroundColor3=C3(45,45,45);s.BorderSizePixel=0
+local function mkS(par,ord)local s=Instance.new("Frame",par);s.LayoutOrder=ord;s.Size=UDim2.new(1,0,0,1);s.BackgroundColor3=C3(45,45,45);s.BorderSizePixel=0 end
+local function mkSL(par,ord,txt)
+	local l=Instance.new("TextLabel",par);l.LayoutOrder=ord;l.Size=UDim2.new(1,0,0,11);l.BackgroundTransparency=1;l.TextColor3=C3(130,130,130);l.TextSize=8;l.Font=Enum.Font.GothamMedium;l.Text=txt;return l
 end
-local function makeStatLbl(par,ord,txt)
-	local l=Instance.new("TextLabel",par);l.LayoutOrder=ord;l.Size=UDim2.new(1,0,0,11);l.BackgroundTransparency=1
-	l.TextColor3=C3(130,130,130);l.TextSize=8;l.Font=Enum.Font.GothamMedium;l.Text=txt;return l
-end
-local function makeRow(par,ord,lA,lB,cA,cB)
+local function mkR(par,ord,a,b,ca,cb)
 	local row=Instance.new("Frame",par);row.LayoutOrder=ord;row.Size=UDim2.new(1,0,0,20);row.BackgroundTransparency=1
 	local rl=Instance.new("UIListLayout",row);rl.FillDirection=Enum.FillDirection.Horizontal;rl.Padding=UDim.new(0,3);rl.HorizontalAlignment=Enum.HorizontalAlignment.Center
-	local function rb(t,cb)local b=Instance.new("TextButton",row);b.Size=UDim2.new(0.48,0,1,0);b.BackgroundColor3=C3(40,40,40);b.TextColor3=C3(255,255,255);b.Font=Enum.Font.GothamMedium;b.TextSize=9;b.Text=t;b.AutoButtonColor=true;Instance.new("UICorner",b).CornerRadius=UDim.new(0,4);b.MouseButton1Click:Connect(cb);return b end
-	rb(lA,cA);rb(lB,cB)
+	local function rb(t,c)local btn=Instance.new("TextButton",row);btn.Size=UDim2.new(0.48,0,1,0);btn.BackgroundColor3=C3(40,40,40);btn.TextColor3=C3(255,255,255);btn.Font=Enum.Font.GothamMedium;btn.TextSize=9;btn.Text=t;btn.AutoButtonColor=true;Instance.new("UICorner",btn).CornerRadius=UDim.new(0,4);btn.MouseButton1Click:Connect(c);return btn end
+	rb(a,ca);rb(b,cb)
 end
-local function makeTB(par,ord,ph)
-	local b=Instance.new("TextBox",par);b.LayoutOrder=ord;b.Size=UDim2.new(1,0,0,18)
-	b.BackgroundColor3=C3(30,30,30);b.TextColor3=C3(200,200,200);b.PlaceholderText=ph;b.PlaceholderColor3=C3(65,65,65)
-	b.TextSize=8;b.Font=Enum.Font.GothamMedium;b.Text="";b.ClearTextOnFocus=false;b.BorderSizePixel=0;b.TextXAlignment=Enum.TextXAlignment.Left
-	Instance.new("UICorner",b).CornerRadius=UDim.new(0,4);local p=Instance.new("UIPadding",b);p.PaddingLeft=UDim.new(0,4);return b
+local function mkTB(par,ord,ph)
+	local b=Instance.new("TextBox",par);b.LayoutOrder=ord;b.Size=UDim2.new(1,0,0,18);b.BackgroundColor3=C3(30,30,30);b.TextColor3=C3(200,200,200);b.PlaceholderText=ph;b.PlaceholderColor3=C3(65,65,65);b.TextSize=8;b.Font=Enum.Font.GothamMedium;b.Text="";b.ClearTextOnFocus=false;b.BorderSizePixel=0;b.TextXAlignment=Enum.TextXAlignment.Left;Instance.new("UICorner",b).CornerRadius=UDim.new(0,4);local p=Instance.new("UIPadding",b);p.PaddingLeft=UDim.new(0,4);return b
 end
-local function makeFX(par,ord,lbl,onCol,onToggle)
-	local btn;btn=makeBtn(par,ord,lbl..": OFF",nil,function()
-		local s=onToggle();btn.Text=lbl..": "..(s and"ON"or"OFF");btn.BackgroundColor3=s and onCol or C3(40,40,40)
+local function mkFX(par,ord,lbl,onCol,fn)
+	local btn;btn=mkB(par,ord,lbl..": OFF",nil,function()local s=fn();btn.Text=lbl..": "..(s and"ON"or"OFF");btn.BackgroundColor3=s and onCol or C3(40,40,40)end);return btn
+end
+local aWB=nil
+local function mkWB(par,ord,lbl,col,fn)
+	local btn;btn=mkB(par,ord,lbl,nil,function()
+		if aWB==btn then aWB=nil;btn.BackgroundColor3=C3(40,40,40);FB.disableAllWeather()
+		else if aWB then aWB.BackgroundColor3=C3(40,40,40)end;aWB=btn;btn.BackgroundColor3=col;fn()end
 	end);return btn
 end
-local activeWB=nil
-local function makeWB(par,ord,lbl,onCol,onApply)
-	local btn;btn=makeBtn(par,ord,lbl,nil,function()
-		if activeWB==btn then activeWB=nil;btn.BackgroundColor3=C3(40,40,40);FB.disableAllWeather()
-		else if activeWB then activeWB.BackgroundColor3=C3(40,40,40)end;activeWB=btn;btn.BackgroundColor3=onCol;onApply()end
-	end);return btn
-end
-local function makeHK(par,ord,key,action)
+local function mkHK(par,ord,key,act)
 	local row=Instance.new("Frame",par);row.LayoutOrder=ord;row.Size=UDim2.new(1,0,0,16);row.BackgroundTransparency=1
 	local kl=Instance.new("TextLabel",row);kl.Size=UDim2.new(0,36,1,0);kl.BackgroundColor3=C3(50,50,50);kl.TextColor3=C3(255,220,80);kl.TextSize=8;kl.Font=Enum.Font.GothamBold;kl.Text=key;kl.TextXAlignment=Enum.TextXAlignment.Center;Instance.new("UICorner",kl).CornerRadius=UDim.new(0,3)
-	local al=Instance.new("TextLabel",row);al.Size=UDim2.new(1,-40,1,0);al.Position=UDim2.new(0,40,0,0);al.BackgroundTransparency=1;al.TextColor3=C3(180,180,180);al.TextSize=8;al.Font=Enum.Font.GothamMedium;al.Text=action;al.TextXAlignment=Enum.TextXAlignment.Left
+	local al=Instance.new("TextLabel",row);al.Size=UDim2.new(1,-40,1,0);al.Position=UDim2.new(0,40,0,0);al.BackgroundTransparency=1;al.TextColor3=C3(180,180,180);al.TextSize=8;al.Font=Enum.Font.GothamMedium;al.Text=act;al.TextXAlignment=Enum.TextXAlignment.Left
 end
 
--- PAGE 1 --
-local pg=pages[1];local i=1
-makeLbl(pg,o[i],"  RECORD");o[i]+=1
-local recordBtn=makeBtn(pg,o[i],"🔴 Record",nil,function()if not FB.recording()then FB.startRecording()else FB.stopRecording()end end);o[i]+=1
+-- PAGE 1
+do
+local pg,i=pages[1],1
+mkL(pg,o[i],"  RECORD");o[i]+=1
+local rb=mkB(pg,o[i],"🔴 Record",nil,function()if not FB.recording()then FB.startRecording()else FB.stopRecording()end end);o[i]+=1
 FB.updateRecordBtn=function()
-	if FB.recording()then recordBtn.Text="⏹ Stop";recordBtn.BackgroundColor3=C3(160,28,28);setRecInd(true)
-	else recordBtn.Text="🔴 Record";recordBtn.BackgroundColor3=C3(40,40,40);setRecInd(false)end
+	if FB.recording()then rb.Text="⏹ Stop";rb.BackgroundColor3=C3(160,28,28);setRecInd(true)
+	else rb.Text="🔴 Record";rb.BackgroundColor3=C3(40,40,40);setRecInd(false)end
 end
-local robtn;robtn=makeBtn(pg,o[i],"👥 Others: OFF",nil,function()FB.setRecordAll(not FB.recordAll());robtn.Text="👥 Others: "..(FB.recordAll()and"ON"or"OFF");robtn.BackgroundColor3=FB.recordAll()and C3(25,90,25)or C3(40,40,40)end);o[i]+=1
-FB.frameCountLabel=makeStatLbl(pg,o[i],"Frames: 0  |  0s 0f");o[i]+=1
-makeSep(pg,o[i]);o[i]+=1;makeLbl(pg,o[i],"  PLAYBACK");o[i]+=1
-makeBtn(pg,o[i],"▶ Play",nil,function()FB.playReplay()end);o[i]+=1
-makeRow(pg,o[i],"⬅ Step","Step ➡",function()FB.setPlaybackSpeed(0);FB.setPlaybackIndex(math.clamp(FB.playbackIndex()-1,1,#FB.replayData))end,function()FB.setPlaybackSpeed(0);FB.setPlaybackIndex(math.clamp(FB.playbackIndex()+1,1,#FB.replayData))end);o[i]+=1
-makeBtn(pg,o[i],"🧹 Clear Ghosts",nil,function()FB.cleanupGhosts()end);o[i]+=1
-local loopBtn;loopBtn=makeBtn(pg,o[i],"🔁 Loop: OFF",nil,function()FB.setLoopPlayback(not FB.loopPlayback());loopBtn.Text="🔁 Loop: "..(FB.loopPlayback()and"ON"or"OFF");loopBtn.BackgroundColor3=FB.loopPlayback()and C3(25,80,120)or C3(40,40,40)end);o[i]+=1
-local spdLbl=makeStatLbl(pg,o[i],"Speed: 1.0x");o[i]+=1
-makeRow(pg,o[i],"◀ Slower","Faster ▶",function()local v=math.clamp(math.round((FB.playbackSpeed()-0.1)*10)/10,-2,2);FB.setPlaybackSpeed(v);spdLbl.Text="Speed: "..v.."x"end,function()local v=math.clamp(math.round((FB.playbackSpeed()+0.1)*10)/10,-2,2);FB.setPlaybackSpeed(v);spdLbl.Text="Speed: "..v.."x"end);o[i]+=1
-makeSep(pg,o[i]);o[i]+=1;makeLbl(pg,o[i],"  CAMERA");o[i]+=1
-local fcBtn;fcBtn=makeBtn(pg,o[i],"🎥 Freecam: OFF",nil,function()FB.enableFreecam(not FB.FreecamEnabled())end);o[i]+=1;FB.freecamBtn=fcBtn
-local cmBtn;cmBtn=makeBtn(pg,o[i],"🎯 Mode: Free",nil,function()local m=FB.camMode();if m=="Free"then m="Lock"elseif m=="Lock"then m="Orbit"else m="Free"end;FB.setCamMode(m);cmBtn.Text="🎯 Mode: "..m;cmBtn.BackgroundColor3=m=="Free"and C3(40,40,40)or m=="Lock"and C3(25,90,60)or C3(90,50,20)end);o[i]+=1
-local cinBtn;cinBtn=makeBtn(pg,o[i],"🎞 Cinematic: OFF",nil,function()FB.setCinematicCamera(not FB.cinematicCamera());cinBtn.Text="🎞 Cinematic: "..(FB.cinematicCamera()and"ON"or"OFF");cinBtn.BackgroundColor3=FB.cinematicCamera()and C3(80,30,120)or C3(40,40,40)end);o[i]+=1
-local csl=makeStatLbl(pg,o[i],"Cam Speed: 0.5");o[i]+=1
-makeRow(pg,o[i],"- Slower","Faster +",function()local v=math.clamp(math.round((FB.camSpeed()-0.1)*10)/10,0.1,5);FB.setCamSpeed(v);csl.Text="Cam Speed: "..v end,function()local v=math.clamp(math.round((FB.camSpeed()+0.1)*10)/10,0.1,5);FB.setCamSpeed(v);csl.Text="Cam Speed: "..v end);o[i]+=1
-local fovLbl=makeStatLbl(pg,o[i],"FOV: "..math.floor(cam.FieldOfView));o[i]+=1
-makeRow(pg,o[i],"FOV -","FOV +",function()cam.FieldOfView=math.clamp(cam.FieldOfView-5,30,120);fovLbl.Text="FOV: "..math.floor(cam.FieldOfView)end,function()cam.FieldOfView=math.clamp(cam.FieldOfView+5,30,120);fovLbl.Text="FOV: "..math.floor(cam.FieldOfView)end);o[i]+=1
-local ssBtn;ssBtn=makeBtn(pg,o[i],"📷 Screenshot Mode",nil,function()ssBtn.Text="📷 Hiding (3s)...";ssBtn.BackgroundColor3=C3(120,90,20);frame.Visible=false;task.delay(3,function()frame.Visible=true;ssBtn.Text="📷 Screenshot Mode";ssBtn.BackgroundColor3=C3(40,40,40)end)end);o[i]+=1
-local nvBtn;nvBtn=makeBtn(pg,o[i],"🌙 NV: OFF",nil,function()FB.setNightVision(not FB.nightVisionEnabled());nvBtn.Text="🌙 NV: "..(FB.nightVisionEnabled()and"ON"or"OFF");nvBtn.BackgroundColor3=FB.nightVisionEnabled()and C3(0,85,35)or C3(40,40,40)end);o[i]+=1
+local rob;rob=mkB(pg,o[i],"👥 Others: OFF",nil,function()FB.setRecordAll(not FB.recordAll());rob.Text="👥 Others: "..(FB.recordAll()and"ON"or"OFF");rob.BackgroundColor3=FB.recordAll()and C3(25,90,25)or C3(40,40,40)end);o[i]+=1
+FB.frameCountLabel=mkSL(pg,o[i],"Frames: 0  |  0s 0f");o[i]+=1
+mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  PLAYBACK");o[i]+=1
+mkB(pg,o[i],"▶ Play",nil,function()FB.playReplay()end);o[i]+=1
+mkR(pg,o[i],"⬅ Step","Step ➡",function()FB.setPlaybackSpeed(0);FB.setPlaybackIndex(math.clamp(FB.playbackIndex()-1,1,#FB.replayData))end,function()FB.setPlaybackSpeed(0);FB.setPlaybackIndex(math.clamp(FB.playbackIndex()+1,1,#FB.replayData))end);o[i]+=1
+mkB(pg,o[i],"🧹 Clear Ghosts",nil,function()FB.cleanupGhosts()end);o[i]+=1
+local lb;lb=mkB(pg,o[i],"🔁 Loop: OFF",nil,function()FB.setLoopPlayback(not FB.loopPlayback());lb.Text="🔁 Loop: "..(FB.loopPlayback()and"ON"or"OFF");lb.BackgroundColor3=FB.loopPlayback()and C3(25,80,120)or C3(40,40,40)end);o[i]+=1
+local sl=mkSL(pg,o[i],"Speed: 1.0x");o[i]+=1
+mkR(pg,o[i],"◀ Slower","Faster ▶",function()local v=math.clamp(math.round((FB.playbackSpeed()-0.1)*10)/10,-2,2);FB.setPlaybackSpeed(v);sl.Text="Speed: "..v.."x"end,function()local v=math.clamp(math.round((FB.playbackSpeed()+0.1)*10)/10,-2,2);FB.setPlaybackSpeed(v);sl.Text="Speed: "..v.."x"end);o[i]+=1
+mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  CAMERA");o[i]+=1
+local fb2;fb2=mkB(pg,o[i],"🎥 Freecam: OFF",nil,function()FB.enableFreecam(not FB.FreecamEnabled())end);o[i]+=1;FB.freecamBtn=fb2
+local cmb;cmb=mkB(pg,o[i],"🎯 Mode: Free",nil,function()local m=FB.camMode();if m=="Free"then m="Lock"elseif m=="Lock"then m="Orbit"else m="Free"end;FB.setCamMode(m);cmb.Text="🎯 Mode: "..m;cmb.BackgroundColor3=m=="Free"and C3(40,40,40)or m=="Lock"and C3(25,90,60)or C3(90,50,20)end);o[i]+=1
+local cnb;cnb=mkB(pg,o[i],"🎞 Cinematic: OFF",nil,function()FB.setCinematicCamera(not FB.cinematicCamera());cnb.Text="🎞 Cinematic: "..(FB.cinematicCamera()and"ON"or"OFF");cnb.BackgroundColor3=FB.cinematicCamera()and C3(80,30,120)or C3(40,40,40)end);o[i]+=1
+local csl=mkSL(pg,o[i],"Cam Speed: 0.5");o[i]+=1
+mkR(pg,o[i],"- Slower","Faster +",function()local v=math.clamp(math.round((FB.camSpeed()-0.1)*10)/10,0.1,5);FB.setCamSpeed(v);csl.Text="Cam Speed: "..v end,function()local v=math.clamp(math.round((FB.camSpeed()+0.1)*10)/10,0.1,5);FB.setCamSpeed(v);csl.Text="Cam Speed: "..v end);o[i]+=1
+local fl=mkSL(pg,o[i],"FOV: "..math.floor(cam.FieldOfView));o[i]+=1
+mkR(pg,o[i],"FOV -","FOV +",function()cam.FieldOfView=math.clamp(cam.FieldOfView-5,30,120);fl.Text="FOV: "..math.floor(cam.FieldOfView)end,function()cam.FieldOfView=math.clamp(cam.FieldOfView+5,30,120);fl.Text="FOV: "..math.floor(cam.FieldOfView)end);o[i]+=1
+local ssb;ssb=mkB(pg,o[i],"📷 Screenshot Mode",nil,function()ssb.Text="📷 Hiding (3s)...";ssb.BackgroundColor3=C3(120,90,20);frame.Visible=false;task.delay(3,function()frame.Visible=true;ssb.Text="📷 Screenshot Mode";ssb.BackgroundColor3=C3(40,40,40)end)end);o[i]+=1
+local nvb;nvb=mkB(pg,o[i],"🌙 NV: OFF",nil,function()FB.setNightVision(not FB.nightVisionEnabled());nvb.Text="🌙 NV: "..(FB.nightVisionEnabled()and"ON"or"OFF");nvb.BackgroundColor3=FB.nightVisionEnabled()and C3(0,85,35)or C3(40,40,40)end);o[i]+=1
 
--- PAGE 2 --
-i=2;pg=pages[2]
-makeLbl(pg,o[i],"  SAVE / LOAD");o[i]+=1
-FB.loadSlotNames()
+mkL(pg,o[i],"Change playback speed if the anim stops.");o[i]+=1
+
+end
+
+-- PAGE 2
+do
+local pg,i=pages[2],2
+mkL(pg,o[i],"  SAVE / LOAD");o[i]+=1;FB.loadSlotNames()
 task.spawn(function()pcall(function()
 	if isfile and isfile("flashback_slot1.txt")then
-		local raw=readfile("flashback_slot1.txt")
-		if raw and raw~=""then
-			local parsed=FB.deserializeReplay(raw)
-			if parsed and #parsed>0 then for k,v in ipairs(parsed)do FB.replayData[k]=v end;warn("Auto-loaded slot 1! "..#FB.replayData.." frames");FB.updateFrameLabel()end
+		local raw=readfile("flashback_slot1.txt");if raw and raw~=""then
+			local p=FB.deserializeReplay(raw);if p and #p>0 then for k,v in ipairs(p)do FB.replayData[k]=v end;warn("Auto-loaded slot 1! "..#FB.replayData.." frames");FB.updateFrameLabel()end
 		end
 	end
 end)end)
 for slot=1,5 do
 	local fn="flashback_slot"..slot..".txt"
-	makeLbl(pg,o[i],"  Slot "..slot);o[i]+=1
-	local nb=makeTB(pg,o[i],"name this slot...");o[i]+=1;nb.Text=FB.slotNames[slot]
+	mkL(pg,o[i],"  Slot "..slot);o[i]+=1
+	local nb=mkTB(pg,o[i],"name this slot...");o[i]+=1;nb.Text=FB.slotNames[slot]
 	nb.FocusLost:Connect(function()FB.slotNames[slot]=nb.Text;FB.saveSlotNames()end)
-	makeRow(pg,o[i],"💾 Save "..slot,"📂 Load "..slot,
+	mkR(pg,o[i],"💾 Save "..slot,"📂 Load "..slot,
 		function()
 			if #FB.replayData==0 then warn("Nothing to save.")return end
-			local ok,res=pcall(FB.serializeReplay,FB.replayData)
-			if not ok then warn("Serialize failed: "..tostring(res))return end
-			local fok,ferr=pcall(writefile,fn,res)
-			if fok then warn("Slot "..slot.." saved! ("..#FB.replayData.." frames)")else warn("writefile failed: "..tostring(ferr))end
-			pcall(setclipboard,res)
+			local ok,res=pcall(FB.serializeReplay,FB.replayData);if not ok then warn("Serialize failed.")return end
+			if pcall(writefile,fn,res)then warn("Slot "..slot.." saved! ("..#FB.replayData.." frames)")end;pcall(setclipboard,res)
 		end,
 		function()
 			task.spawn(function()
 				local ok,res=pcall(function()
-					if not isfile or not isfile(fn)then error(fn.." not found.")end
-					local raw=readfile(fn);if not raw or raw==""then error("empty")end
-					return FB.deserializeReplay(raw)
+					if not isfile or not isfile(fn)then error("not found")end
+					local r=readfile(fn);if not r or r==""then error("empty")end;return FB.deserializeReplay(r)
 				end)
-				if ok and res and #res>0 then
-					for k,v in ipairs(res)do FB.replayData[k]=v end;FB.updateFrameLabel()
-					warn("Slot "..slot.." loaded! "..#FB.replayData.." frames")
+				if ok and res and #res>0 then for k,v in ipairs(res)do FB.replayData[k]=v end;FB.updateFrameLabel();warn("Slot "..slot.." loaded! "..#FB.replayData.." frames")
 				else warn("Load slot "..slot.." failed: "..tostring(res))end
 			end)
 		end
 	);o[i]+=1
-	if slot<5 then makeSep(pg,o[i]);o[i]+=1 end
+	if slot<5 then mkS(pg,o[i]);o[i]+=1 end
 end
-makeSep(pg,o[i]);o[i]+=1;makeLbl(pg,o[i],"  PASTE CODE");o[i]+=1
-local codeBox=makeTB(pg,o[i],"Paste code here...");o[i]+=1
-makeBtn(pg,o[i],"📂 Load from Code",nil,function()
-	local raw=codeBox.Text;if not raw or raw==""then warn("No code.")return end
+mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  PASTE CODE");o[i]+=1
+local cb=mkTB(pg,o[i],"Paste code here...");o[i]+=1
+mkB(pg,o[i],"📂 Load from Code",nil,function()
+	local r=cb.Text;if not r or r==""then warn("No code.")return end
 	task.spawn(function()
-		local ok,res=pcall(FB.deserializeReplay,raw)
-		if ok and res and #res>0 then for k,v in ipairs(res)do FB.replayData[k]=v end;codeBox.Text="";FB.updateFrameLabel();warn("Loaded! "..#FB.replayData.." frames")
+		local ok,res=pcall(FB.deserializeReplay,r)
+		if ok and res and #res>0 then for k,v in ipairs(res)do FB.replayData[k]=v end;cb.Text="";FB.updateFrameLabel();warn("Loaded! "..#FB.replayData.." frames")
 		else warn("Load failed: "..tostring(res))end
 	end)
 end);o[i]+=1
-makeSep(pg,o[i]);o[i]+=1;makeLbl(pg,o[i],"  FX");o[i]+=1
-local mbb;mbb=makeBtn(pg,o[i],"💫 Motion Blur: OFF",nil,function()FB.setMotionBlurEnabled(not FB.motionBlurEnabled());if not FB.motionBlurEnabled()then FB.motionBlur.Size=0 end;mbb.Text="💫 Motion Blur: "..(FB.motionBlurEnabled()and"ON"or"OFF");mbb.BackgroundColor3=FB.motionBlurEnabled()and C3(80,50,120)or C3(40,40,40)end);o[i]+=1
-makeLbl(pg,o[i],"  Check console for updates.");o[i]+=1
+mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  FX");o[i]+=1
+local mb2;mb2=mkB(pg,o[i],"💫 Motion Blur: OFF",nil,function()FB.setMotionBlurEnabled(not FB.motionBlurEnabled());if not FB.motionBlurEnabled()then FB.motionBlur.Size=0 end;mb2.Text="💫 Motion Blur: "..(FB.motionBlurEnabled()and"ON"or"OFF");mb2.BackgroundColor3=FB.motionBlurEnabled()and C3(80,50,120)or C3(40,40,40)end);o[i]+=1
+mkL(pg,o[i],"  Check console for updates.");o[i]+=1
+end
 
--- PAGE 3 --
-i=3;pg=pages[3]
-makeLbl(pg,o[i],"  COLOR GRADING");o[i]+=1
-makeFX(pg,o[i],"🟤 Sepia",C3(120,80,30),function()FB.sepiaEnabled=not FB.sepiaEnabled;FB.sepiaCC.Enabled=FB.sepiaEnabled;return FB.sepiaEnabled end);o[i]+=1
-makeFX(pg,o[i],"⬜ B&W",C3(60,60,60),function()FB.bwEnabled=not FB.bwEnabled;FB.bwCC.Enabled=FB.bwEnabled;return FB.bwEnabled end);o[i]+=1
-makeFX(pg,o[i],"📼 VHS",C3(100,40,100),function()FB.vhsEnabled=not FB.vhsEnabled;FB.vhsCC.Enabled=FB.vhsEnabled;return FB.vhsEnabled end);o[i]+=1
-makeFX(pg,o[i],"🌅 Sunset",C3(150,80,20),function()FB.sunsetEnabled=not FB.sunsetEnabled;FB.sunsetCC.Enabled=FB.sunsetEnabled;return FB.sunsetEnabled end);o[i]+=1
-makeFX(pg,o[i],"🌈 Neon",C3(100,20,160),function()FB.neonEnabled=not FB.neonEnabled;FB.neonCC.Enabled=FB.neonEnabled;FB.neonBloom.Enabled=FB.neonEnabled;return FB.neonEnabled end);o[i]+=1
-makeSep(pg,o[i]);o[i]+=1;makeLbl(pg,o[i],"  ATMOSPHERE");o[i]+=1
-makeFX(pg,o[i],"🌫 Fog",C3(60,80,100),function()FB.setFog(not FB.fogEnabled);return FB.fogEnabled end);o[i]+=1
-makeFX(pg,o[i],"🔍 Depth of Field",C3(40,80,120),function()FB.dofEnabled=not FB.dofEnabled;FB.dofEffect.Enabled=FB.dofEnabled;return FB.dofEnabled end);o[i]+=1
-makeSep(pg,o[i]);o[i]+=1;makeLbl(pg,o[i],"  CINEMATIC");o[i]+=1
-makeFX(pg,o[i],"🎬 Cine Bars",C3(30,30,30),function()FB.cineBarsEnabled=not FB.cineBarsEnabled;cineBarsTop.Visible=FB.cineBarsEnabled;cineBarsBot.Visible=FB.cineBarsEnabled;return FB.cineBarsEnabled end);o[i]+=1
-makeFX(pg,o[i],"🕶 Vignette",C3(30,30,60),function()FB.vignetteEnabled=not FB.vignetteEnabled;FB.vignetteCC.Enabled=FB.vignetteEnabled;return FB.vignetteEnabled end);o[i]+=1
-makeFX(pg,o[i],"📽 Film Grain",C3(50,50,50),function()FB.filmGrainEnabled=not FB.filmGrainEnabled;if not FB.filmGrainEnabled then grainFrame.Visible=false end;return FB.filmGrainEnabled end);o[i]+=1
-makeFX(pg,o[i],"💓 Heartbeat",C3(120,20,40),function()FB.heartbeatEnabled=not FB.heartbeatEnabled;if not FB.heartbeatEnabled then FB.heartbeatCC.Enabled=false end;return FB.heartbeatEnabled end);o[i]+=1
+-- PAGE 3
+do
+local pg,i=pages[3],3
+mkL(pg,o[i],"  COLOR GRADING");o[i]+=1
+mkFX(pg,o[i],"🟤 Sepia",C3(120,80,30),function()FB.sepiaEnabled=not FB.sepiaEnabled;FB.sepiaCC.Enabled=FB.sepiaEnabled;return FB.sepiaEnabled end);o[i]+=1
+mkFX(pg,o[i],"⬜ B&W",C3(60,60,60),function()FB.bwEnabled=not FB.bwEnabled;FB.bwCC.Enabled=FB.bwEnabled;return FB.bwEnabled end);o[i]+=1
+mkFX(pg,o[i],"📼 VHS",C3(100,40,100),function()FB.vhsEnabled=not FB.vhsEnabled;FB.vhsCC.Enabled=FB.vhsEnabled;return FB.vhsEnabled end);o[i]+=1
+mkFX(pg,o[i],"🌅 Sunset",C3(150,80,20),function()FB.sunsetEnabled=not FB.sunsetEnabled;FB.sunsetCC.Enabled=FB.sunsetEnabled;return FB.sunsetEnabled end);o[i]+=1
+mkFX(pg,o[i],"🌈 Neon",C3(100,20,160),function()FB.neonEnabled=not FB.neonEnabled;FB.neonCC.Enabled=FB.neonEnabled;FB.neonBloom.Enabled=FB.neonEnabled;return FB.neonEnabled end);o[i]+=1
+mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  ATMOSPHERE");o[i]+=1
+mkFX(pg,o[i],"🌫 Fog",C3(60,80,100),function()FB.setFog(not FB.fogEnabled);return FB.fogEnabled end);o[i]+=1
+mkFX(pg,o[i],"🔍 DOF",C3(40,80,120),function()FB.dofEnabled=not FB.dofEnabled;FB.dofEffect.Enabled=FB.dofEnabled;return FB.dofEnabled end);o[i]+=1
+mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  CINEMATIC");o[i]+=1
+mkFX(pg,o[i],"🎬 Cine Bars",C3(30,30,30),function()FB.cineBarsEnabled=not FB.cineBarsEnabled;cineBarsTop.Visible=FB.cineBarsEnabled;cineBarsBot.Visible=FB.cineBarsEnabled;return FB.cineBarsEnabled end);o[i]+=1
+mkFX(pg,o[i],"🕶 Vignette",C3(30,30,60),function()FB.vignetteEnabled=not FB.vignetteEnabled;FB.vignetteCC.Enabled=FB.vignetteEnabled;return FB.vignetteEnabled end);o[i]+=1
+mkFX(pg,o[i],"📽 Film Grain",C3(50,50,50),function()FB.filmGrainEnabled=not FB.filmGrainEnabled;if not FB.filmGrainEnabled then grainFrame.Visible=false end;return FB.filmGrainEnabled end);o[i]+=1
+mkFX(pg,o[i],"💓 Heartbeat",C3(120,20,40),function()FB.heartbeatEnabled=not FB.heartbeatEnabled;if not FB.heartbeatEnabled then FB.heartbeatCC.Enabled=false end;return FB.heartbeatEnabled end);o[i]+=1
+end
 
--- PAGE 4 --
-i=4;pg=pages[4]
-makeLbl(pg,o[i],"  PARTICLES");o[i]+=1
-local fwBtn;fwBtn=makeBtn(pg,o[i],"📍 Particles: Follow Cam",nil,function()FB.setWeatherParticlesFollow(not FB.weatherParticlesFollow());fwBtn.Text=FB.weatherParticlesFollow()and"📍 Particles: Follow Cam"or"🌍 Particles: World Fixed";fwBtn.BackgroundColor3=FB.weatherParticlesFollow()and C3(25,80,120)or C3(60,50,20)end);o[i]+=1
-makeSep(pg,o[i]);o[i]+=1
-
-local wdefs={
-	{"WEATHER",nil,nil},
-	{"🌧 Rain",C3(30,60,120),{rain=600,cc={tint=C3(180,200,255),brightness=-0.1,contrast=0.1},fog={e=400,s=50,c=C3(150,160,180)}}},
+-- PAGE 4
+do
+local pg,i=pages[4],4
+mkL(pg,o[i],"  PARTICLES");o[i]+=1
+local fw;fw=mkB(pg,o[i],"📍 Particles: Follow Cam",nil,function()FB.setWeatherParticlesFollow(not FB.weatherParticlesFollow());fw.Text=FB.weatherParticlesFollow()and"📍 Particles: Follow Cam"or"🌍 Particles: World Fixed";fw.BackgroundColor3=FB.weatherParticlesFollow()and C3(25,80,120)or C3(60,50,20)end);o[i]+=1
+mkS(pg,o[i]);o[i]+=1
+local wd={
+	{"WEATHER"},{"🌧 Rain",C3(30,60,120),{rain=600,cc={tint=C3(180,200,255),brightness=-0.1,contrast=0.1},fog={e=400,s=50,c=C3(150,160,180)}}},
 	{"⛈ Thunderstorm",C3(30,30,80),{rain=1000,cc={tint=C3(150,160,200),brightness=-0.2,contrast=0.2},fog={e=200,s=20,c=C3(80,80,100)},blur=2}},
 	{"🌨 Snow",C3(160,200,220),{snow=300,cc={tint=C3(210,230,255),brightness=0.05,saturation=-0.3},fog={e=300,s=30,c=C3(200,210,220)}}},
 	{"🌪 Blizzard",C3(100,140,180),{snow=1000,cc={tint=C3(200,220,255),brightness=0.1,saturation=-0.5,contrast=0.2},fog={e=80,s=5,c=C3(220,230,240)},blur=3}},
 	{"🏜 Sandstorm",C3(160,110,30),{sand=700,cc={tint=C3(255,200,100),brightness=-0.05,saturation=-0.2,contrast=0.1},fog={e=100,s=10,c=C3(200,160,80)},blur=2}},
-	{"TIME OF DAY",nil,nil},
-	{"🌅 Dawn",C3(180,100,40),{cc={tint=C3(255,200,150),brightness=0.05,saturation=0.2},clock=6,ambient=C3(180,120,80),outdoor=C3(200,140,100)}},
+	{"TIME OF DAY"},{"🌅 Dawn",C3(180,100,40),{cc={tint=C3(255,200,150),brightness=0.05,saturation=0.2},clock=6,ambient=C3(180,120,80),outdoor=C3(200,140,100)}},
 	{"🌇 Dusk",C3(160,60,20),{cc={tint=C3(255,160,80),brightness=-0.05,saturation=0.3},clock=19,ambient=C3(160,80,40),outdoor=C3(180,100,60)}},
 	{"🌃 Midnight",C3(10,10,60),{cc={tint=C3(80,90,160),brightness=-0.3,contrast=0.2,saturation=-0.3},clock=0,ambient=C3(10,10,40),outdoor=C3(15,15,50),brightness=0.1}},
 	{"☀️ Midday",C3(200,180,60),{cc={tint=C3(255,250,220),brightness=0.15,contrast=0.1,saturation=0.1},clock=12,brightness=3,ambient=C3(180,180,180),outdoor=C3(200,200,200)}},
 	{"🌑 Eclipse",C3(40,0,0),{cc={tint=C3(180,60,60),brightness=-0.4,contrast=0.3,saturation=-0.2},clock=12,brightness=0.2,ambient=C3(40,10,10),outdoor=C3(50,15,15),fog={e=500,s=100,c=C3(80,20,20)}}},
-	{"ENVIRONMENT",nil,nil},
-	{"🌊 Underwater",C3(0,60,120),{cc={tint=C3(60,140,200),brightness=-0.1,saturation=0.2,contrast=0.1},fog={e=150,s=10,c=C3(0,80,140)},blur=4,bloom={i=0.5,s=20,t=0.8}}},
+	{"ENVIRONMENT"},{"🌊 Underwater",C3(0,60,120),{cc={tint=C3(60,140,200),brightness=-0.1,saturation=0.2,contrast=0.1},fog={e=150,s=10,c=C3(0,80,140)},blur=4,bloom={i=0.5,s=20,t=0.8}}},
 	{"❄️ Arctic",C3(160,200,255),{cc={tint=C3(180,220,255),brightness=0.1,saturation=-0.6,contrast=0.2},fog={e=200,s=20,c=C3(200,220,240)},brightness=1.5}},
 	{"🎮 Retro",C3(0,120,0),{cc={tint=C3(100,255,100),brightness=0,saturation=2,contrast=0.8}}},
-	{"📺 Old TV",C3(60,60,60),{}},
-	{"🕯 Candlelight",C3(140,80,10),{fog={e=200,s=30,c=C3(120,80,40)},brightness=0.5}},
+	{"📺 Old TV",C3(60,60,60),{}},{"🕯 Candlelight",C3(140,80,10),{fog={e=200,s=30,c=C3(120,80,40)},brightness=0.5}},
 	{"🌌 Space",C3(0,0,40),{cc={tint=C3(80,80,160),brightness=-0.2,contrast=0.4,saturation=-0.3},bloom={i=2,s=40,t=0.5},clock=0,brightness=0.8,ambient=C3(40,40,80),outdoor=C3(30,30,60)}},
 	{"💊 Acid Trip",C3(180,0,180),{bloom={i=1.5,s=30,t=0.4},blur=1}},
 	{"🩸 Blood Moon",C3(100,0,0),{cc={tint=C3(255,80,80),brightness=0.1,contrast=0.3,saturation=0.4},fog={e=500,s=80,c=C3(140,20,20)},clock=0,brightness=1.5,ambient=C3(120,20,20),outdoor=C3(140,30,30),bloom={i=0.8,s=20,t=0.8}}},
 }
-for _,d in ipairs(wdefs)do
-	if d[2]==nil then makeLbl(pg,o[i],"  "..d[1]);o[i]+=1
-	else makeWB(pg,o[i],d[1],d[2],function()FB.applyWeather(d[3]);if d[1]:find("Old TV")then FB.tvFlickerCC.Enabled=true;tvFrame.Visible=true end end);o[i]+=1 end
+for _,d in ipairs(wd)do
+	if not d[2]then mkL(pg,o[i],"  "..d[1]);o[i]+=1
+	else mkWB(pg,o[i],d[1],d[2],function()FB.applyWeather(d[3]);if d[1]:find("Old TV")then FB.tvFlickerCC.Enabled=true;FB.tvFrame.Visible=true end end);o[i]+=1 end
 end
-makeBtn(pg,o[i],"✖ Clear Weather",C3(80,30,30),function()if activeWB then activeWB.BackgroundColor3=C3(40,40,40);activeWB=nil end;FB.disableAllWeather();tvFrame.Visible=false end);o[i]+=1
+mkB(pg,o[i],"✖ Clear Weather",C3(80,30,30),function()if aWB then aWB.BackgroundColor3=C3(40,40,40);aWB=nil end;FB.disableAllWeather()end);o[i]+=1
+end
 
--- PAGE 5 --
-i=5;pg=pages[5]
-makeLbl(pg,o[i],"  KEYBINDS");o[i]+=1;makeSep(pg,o[i]);o[i]+=1
-local hks={{"R","Start/Stop Record"},{"P","Play Replay"},{"F","Toggle Freecam"},{"X","Clear Ghosts"},{"←","Step Back"},{"→","Step Forward"},{"W/S","Freecam Fwd/Back"},{"A/D","Freecam Left/Right"},{"E/Q","Freecam Up/Down"}}
-for _,h in ipairs(hks)do makeHK(pg,o[i],h[1],h[2]);o[i]+=1 end
-makeSep(pg,o[i]);o[i]+=1;makeLbl(pg,o[i],"  CAM PATH KEYS");o[i]+=1;makeSep(pg,o[i]);o[i]+=1
-local cpks={{"J","Start/Stop Path Rec"},{"K","Play Camera Path"},{"L","Clear Camera Path"}}
-for _,h in ipairs(cpks)do makeHK(pg,o[i],h[1],h[2]);o[i]+=1 end
+-- PAGE 5
+do
+local pg,i=pages[5],5
+mkL(pg,o[i],"  KEYBINDS");o[i]+=1;mkS(pg,o[i]);o[i]+=1
+for _,h in ipairs({{"R","Start/Stop Record"},{"P","Play Replay"},{"F","Toggle Freecam"},{"X","Clear Ghosts"},{"←","Step Back"},{"→","Step Forward"},{"W/S","Freecam Fwd/Back"},{"A/D","Freecam Left/Right"},{"E/Q","Freecam Up/Down"},})do mkHK(pg,o[i],h[1],h[2]);o[i]+=1 end
+mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  CAM PATH KEYS");o[i]+=1;mkS(pg,o[i]);o[i]+=1
+for _,h in ipairs({{"J","Start/Stop Path Rec"},{"K","Play Camera Path"},{"L","Clear Camera Path"}})do mkHK(pg,o[i],h[1],h[2]);o[i]+=1 end
+end
 
--- PAGE 6 --
-i=6;pg=pages[6]
-makeLbl(pg,o[i],"  CAMERA PATH");o[i]+=1
-local cpsl=makeStatLbl(pg,o[i],"Path: 0 frames");o[i]+=1;FB.camPathStatusLbl=cpsl
-local cprBtn;cprBtn=makeBtn(pg,o[i],"⏺ Record Path",nil,function()if not FB.camPathRecording()then FB.startCamPathRec()else FB.stopCamPathRec()end end);o[i]+=1;FB.camPathRecBtn=cprBtn
-local cpspLbl=makeStatLbl(pg,o[i],"Path Speed: 1.0x");o[i]+=1
-makeRow(pg,o[i],"◀ Slower","Faster ▶",function()local v=math.clamp(math.round((FB.camPathSpeed()-0.1)*10)/10,0.1,4);FB.setCamPathSpeed(v);cpspLbl.Text="Path Speed: "..v.."x"end,function()local v=math.clamp(math.round((FB.camPathSpeed()+0.1)*10)/10,0.1,4);FB.setCamPathSpeed(v);cpspLbl.Text="Path Speed: "..v.."x"end);o[i]+=1
-makeBtn(pg,o[i],"▶ Play Path",nil,function()FB.playCamPath()end);o[i]+=1
-makeBtn(pg,o[i],"⏹ Stop Path",nil,function()FB.camPathPlaying=false;cpsl.Text="Path: "..#FB.camPathFrames.." frames"end);o[i]+=1
-makeBtn(pg,o[i],"🧹 Clear Path",nil,function()FB.camPathFrames={};cprBtn.Text="⏺ Record Path";cprBtn.BackgroundColor3=C3(40,40,40);cpsl.Text="Path: 0 frames"end);o[i]+=1
-makeSep(pg,o[i]);o[i]+=1;makeLbl(pg,o[i],"  MUSIC");o[i]+=1
-local msl=makeStatLbl(pg,o[i],"No track loaded");o[i]+=1
-makeLbl(pg,o[i],"  Asset ID");o[i]+=1
-local midBox=makeTB(pg,o[i],"Enter asset ID...");o[i]+=1
-makeBtn(pg,o[i],"▶ Play by ID",nil,function()local id=midBox.Text:match("%d+");if not id then warn("Invalid ID.")return end;FB.bgMusic.SoundId="rbxassetid://"..id;FB.bgMusic:Play();msl.Text="Playing ID: "..id end);o[i]+=1
-makeSep(pg,o[i]);o[i]+=1;makeLbl(pg,o[i],"  Search Audio");o[i]+=1
-local msBox=makeTB(pg,o[i],"Search audio name...");o[i]+=1
-local srFrame=Instance.new("Frame",pg);srFrame.LayoutOrder=o[i];o[i]+=1;srFrame.Size=UDim2.new(1,0,0,0);srFrame.AutomaticSize=Enum.AutomaticSize.Y;srFrame.BackgroundTransparency=1
-local srl=Instance.new("UIListLayout",srFrame);srl.Padding=UDim.new(0,2);srl.SortOrder=Enum.SortOrder.LayoutOrder
-makeBtn(pg,o[i],"🔍 Search",nil,function()
-	local q=msBox.Text;if not q or q==""then warn("Enter search term.")return end
-	msl.Text="Searching..."
-	for _,c in ipairs(srFrame:GetChildren())do if not c:IsA("UIListLayout")then c:Destroy()end end
+-- PAGE 6
+do
+local pg,i=pages[6],6
+mkL(pg,o[i],"  CAMERA PATH");o[i]+=1
+local csl=mkSL(pg,o[i],"Path: 0 frames");o[i]+=1;FB.camPathStatusLbl=csl
+local crb;crb=mkB(pg,o[i],"⏺ Record Path",nil,function()if not FB.camPathRecording()then FB.startCamPathRec()else FB.stopCamPathRec()end end);o[i]+=1;FB.camPathRecBtn=crb
+local cpl=mkSL(pg,o[i],"Path Speed: 1.0x");o[i]+=1
+mkR(pg,o[i],"◀ Slower","Faster ▶",function()local v=math.clamp(math.round((FB.camPathSpeed()-0.1)*10)/10,0.1,4);FB.setCamPathSpeed(v);cpl.Text="Path Speed: "..v.."x"end,function()local v=math.clamp(math.round((FB.camPathSpeed()+0.1)*10)/10,0.1,4);FB.setCamPathSpeed(v);cpl.Text="Path Speed: "..v.."x"end);o[i]+=1
+mkB(pg,o[i],"▶ Play Path",nil,function()FB.playCamPath()end);o[i]+=1
+mkB(pg,o[i],"⏹ Stop Path",nil,function()FB.camPathPlaying=false;csl.Text="Path: "..#FB.camPathFrames.." frames"end);o[i]+=1
+mkB(pg,o[i],"🧹 Clear Path",nil,function()FB.camPathFrames={};crb.Text="⏺ Record Path";crb.BackgroundColor3=C3(40,40,40);csl.Text="Path: 0 frames"end);o[i]+=1
+mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  MUSIC");o[i]+=1
+local msl=mkSL(pg,o[i],"No track loaded");o[i]+=1
+mkL(pg,o[i],"  Asset ID");o[i]+=1
+local mib=mkTB(pg,o[i],"Enter asset ID...");o[i]+=1
+mkB(pg,o[i],"▶ Play by ID",nil,function()local id=mib.Text:match("%d+");if not id then return end;FB.bgMusic.SoundId="rbxassetid://"..id;FB.bgMusic:Play();msl.Text="Playing ID: "..id end);o[i]+=1
+mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  Search Audio");o[i]+=1
+local msb=mkTB(pg,o[i],"Search audio name...");o[i]+=1
+local srf=Instance.new("Frame",pg);srf.LayoutOrder=o[i];o[i]+=1;srf.Size=UDim2.new(1,0,0,0);srf.AutomaticSize=Enum.AutomaticSize.Y;srf.BackgroundTransparency=1
+do local l=Instance.new("UIListLayout",srf);l.Padding=UDim.new(0,2);l.SortOrder=Enum.SortOrder.LayoutOrder end
+mkB(pg,o[i],"🔍 Search",nil,function()
+	local q=msb.Text;if q==""then return end;msl.Text="Searching..."
+	for _,c in ipairs(srf:GetChildren())do if not c:IsA("UIListLayout")then c:Destroy()end end
 	task.spawn(function()
-		local ok,res=pcall(function()return HS:JSONDecode(game:HttpGet("https://catalog.roproxy.com/v1/search/items?category=Audio&keyword="..HS:UrlEncode(q).."&limit=5"))end)
-		if not ok or not res or not res.data then msl.Text="Search failed.";return end
-		if #res.data==0 then msl.Text="No results.";return end
+		local ok,res=pcall(function()return HS:JSONDecode(game:HttpGet("https://apis.roproxy.com/toolbox-service/v1/audio?keyword="..HS:UrlEncode(q).."&limit=5"))end)
+		if not ok or not res or not res.data or #res.data==0 then msl.Text="No results.";return end
 		msl.Text="Found "..#res.data.." results"
-		local ri=0
-		for _,item in ipairs(res.data)do
-			local id=tostring(item.id);local nm=(item.name or id):sub(1,20)
-			local rb=makeBtn(srFrame,ri,"♪ "..nm,nil,function()FB.bgMusic.SoundId="rbxassetid://"..id;FB.bgMusic:Play();msl.Text="♪ "..nm end)
-			rb.TextXAlignment=Enum.TextXAlignment.Left;ri+=1
+		for ri,item in ipairs(res.data)do
+			local id=tostring(item.asset.id);local nm=(item.asset.name or id):sub(1,20)
+			local rb2=mkB(srf,ri-1,"♪ "..nm,nil,function()FB.bgMusic.SoundId="rbxassetid://"..id;FB.bgMusic:Play();msl.Text="♪ "..nm end)
+			rb2.TextXAlignment=Enum.TextXAlignment.Left
 		end
 	end)
 end);o[i]+=1
-makeSep(pg,o[i]);o[i]+=1;makeLbl(pg,o[i],"  PLAYBACK");o[i]+=1
-local volLbl=makeStatLbl(pg,o[i],"Volume: 0.5");o[i]+=1
-makeRow(pg,o[i],"Vol -","Vol +",function()FB.bgMusic.Volume=math.clamp(math.round((FB.bgMusic.Volume-0.1)*10)/10,0,1);volLbl.Text="Volume: "..FB.bgMusic.Volume end,function()FB.bgMusic.Volume=math.clamp(math.round((FB.bgMusic.Volume+0.1)*10)/10,0,1);volLbl.Text="Volume: "..FB.bgMusic.Volume end);o[i]+=1
-local lmBtn;lmBtn=makeBtn(pg,o[i],"🔁 Loop: ON",C3(25,80,120),function()FB.bgMusic.Looped=not FB.bgMusic.Looped;lmBtn.Text="🔁 Loop: "..(FB.bgMusic.Looped and"ON"or"OFF");lmBtn.BackgroundColor3=FB.bgMusic.Looped and C3(25,80,120)or C3(40,40,40)end);o[i]+=1
-makeRow(pg,o[i],"⏸ Pause","⏹ Stop",function()FB.bgMusic:Pause();msl.Text="Paused"end,function()FB.bgMusic:Stop();msl.Text="Stopped"end);o[i]+=1
+mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  PLAYBACK");o[i]+=1
+local vl=mkSL(pg,o[i],"Volume: 0.5");o[i]+=1
+mkR(pg,o[i],"Vol -","Vol +",function()FB.bgMusic.Volume=math.clamp(math.round((FB.bgMusic.Volume-0.1)*10)/10,0,1);vl.Text="Volume: "..FB.bgMusic.Volume end,function()FB.bgMusic.Volume=math.clamp(math.round((FB.bgMusic.Volume+0.1)*10)/10,0,1);vl.Text="Volume: "..FB.bgMusic.Volume end);o[i]+=1
+local lmb;lmb=mkB(pg,o[i],"🔁 Loop: ON",C3(25,80,120),function()FB.bgMusic.Looped=not FB.bgMusic.Looped;lmb.Text="🔁 Loop: "..(FB.bgMusic.Looped and"ON"or"OFF");lmb.BackgroundColor3=FB.bgMusic.Looped and C3(25,80,120)or C3(40,40,40)end);o[i]+=1
+mkR(pg,o[i],"⏸ Pause","⏹ Stop",function()FB.bgMusic:Pause();msl.Text="Paused"end,function()FB.bgMusic:Stop();msl.Text="Stopped"end);o[i]+=1
+end
 
--- Nav --
-local currentPage=1
+-- PAGE 7
+do
+local pg,i=pages[7],7
+mkL(pg,o[i],"  AUTO SAVE");o[i]+=1;mkSL(pg,o[i],"Saves every 10s to slot 1");o[i]+=1
+local asb;asb=mkB(pg,o[i],"💾 Auto-save: OFF",nil,function()FB.setAutoSaveEnabled(not FB.autoSaveEnabled());asb.Text="💾 Auto-save: "..(FB.autoSaveEnabled()and"ON"or"OFF");asb.BackgroundColor3=FB.autoSaveEnabled()and C3(25,90,25)or C3(40,40,40)end);o[i]+=1
+mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  IN / OUT POINTS");o[i]+=1
+mkR(pg,o[i],"📍 Set In","📍 Set Out",function()FB.setInPoint(math.floor(FB.playbackIndex()));warn("In: "..FB.inPoint())end,function()FB.setOutPoint(math.floor(FB.playbackIndex()));warn("Out: "..FB.outPoint())end);o[i]+=1
+mkR(pg,o[i],"✖ Clear In","✖ Clear Out",function()FB.setInPoint(nil)end,function()FB.setOutPoint(nil)end);o[i]+=1
+mkB(pg,o[i],"▶ Play In→Out",nil,function()
+	local ip=FB.inPoint()or 1;local op=FB.outPoint()or #FB.replayData
+	FB.setPlaybackIndex(ip);FB.setPlaybackSpeed(1)
+	local conn;conn=RS.Heartbeat:Connect(function()if FB.playbackIndex()>=op then FB.setPlaybackSpeed(0);conn:Disconnect()end end)
+end);o[i]+=1
+mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  BOOKMARKS");o[i]+=1
+mkR(pg,o[i],"🔖 Add","🗑 Clear All",
+	function()
+		local f=math.floor(FB.playbackIndex())
+		for _,b in ipairs(FB.bookmarks)do if b==f then warn("Already bookmarked.")return end end
+		table.insert(FB.bookmarks,f);table.sort(FB.bookmarks);if FB.refreshBookmarkDots then FB.refreshBookmarkDots()end;warn("Bookmark: "..f)
+	end,
+	function()while #FB.bookmarks>0 do table.remove(FB.bookmarks)end;if FB.refreshBookmarkDots then FB.refreshBookmarkDots()end end
+);o[i]+=1
+mkR(pg,o[i],"⬅ Prev","Next ➡",
+	function()local c=FB.playbackIndex();for i2=#FB.bookmarks,1,-1 do if FB.bookmarks[i2]<c-1 then FB.setPlaybackSpeed(0);FB.setPlaybackIndex(FB.bookmarks[i2]);return end end end,
+	function()local c=FB.playbackIndex();for _,b in ipairs(FB.bookmarks)do if b>c+1 then FB.setPlaybackSpeed(0);FB.setPlaybackIndex(b);return end end end
+);o[i]+=1
+local bml=mkSL(pg,o[i],"No bookmarks");o[i]+=1
+task.spawn(function()while true do task.wait(0.5)
+	if #FB.bookmarks==0 then bml.Text="No bookmarks"
+	else local s="";for idx,b in ipairs(FB.bookmarks)do s=s.."#"..idx..":"..b.." "end;bml.Text=s:sub(1,38)end
+end end)
+end
+
+-- PAGE 8
+do
+local pg,i=pages[8],8
+mkL(pg,o[i],"  EXPORT / SHARE");o[i]+=1
+local el=mkSL(pg,o[i],"Ready to export");o[i]+=1
+mkB(pg,o[i],"📋 Copy to Clipboard",nil,function()
+	if #FB.replayData==0 then warn("Nothing.")return end
+	local ok,res=pcall(FB.serializeReplay,FB.replayData);if not ok then el.Text="Failed.";return end
+	pcall(setclipboard,res);el.Text="Copied! ("..#FB.replayData.." frames)"
+end);o[i]+=1
+mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  SAVE TO SLOT");o[i]+=1
+for slot=1,5 do
+	mkB(pg,o[i],"💾 Export to Slot "..slot,nil,function()
+		if #FB.replayData==0 then warn("Nothing.")return end
+		local ok,res=pcall(FB.serializeReplay,FB.replayData);if not ok then el.Text="Failed.";return end
+		if pcall(writefile,"flashback_slot"..slot..".txt",res)then el.Text="Saved to slot "..slot.."!";warn("Exported to slot "..slot)end;pcall(setclipboard,res)
+	end);o[i]+=1
+end
+mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  IMPORT");o[i]+=1
+local ib=mkTB(pg,o[i],"Paste replay code...");o[i]+=1
+mkB(pg,o[i],"📂 Import from Code",nil,function()
+	local r=ib.Text;if r==""then return end
+	task.spawn(function()
+		local ok,res=pcall(FB.deserializeReplay,r)
+		if ok and res and #res>0 then for k,v in ipairs(res)do FB.replayData[k]=v end;ib.Text="";FB.updateFrameLabel();el.Text="Imported "..#FB.replayData.." frames!"
+		else el.Text="Import failed."end
+	end)
+end);o[i]+=1
+end
+
+-- Nav
+local cp=1
 local navRow=Instance.new("Frame",frame);navRow.LayoutOrder=2;navRow.Size=UDim2.new(1,0,0,20);navRow.BackgroundTransparency=1
-local nl=Instance.new("UIListLayout",navRow);nl.FillDirection=Enum.FillDirection.Horizontal;nl.HorizontalAlignment=Enum.HorizontalAlignment.Center;nl.Padding=UDim.new(0,3)
-local function makeNavBtn(txt,vis)
-	local b=Instance.new("TextButton",navRow);b.Size=UDim2.new(0.48,0,1,0);b.BackgroundColor3=C3(35,35,35);b.TextColor3=C3(180,180,180);b.TextSize=8;b.Font=Enum.Font.GothamMedium;b.Text=txt;b.AutoButtonColor=true;b.Visible=vis;Instance.new("UICorner",b).CornerRadius=UDim.new(0,4);return b
-end
-local backBtn=makeNavBtn("← Back",false);local nextBtn=makeNavBtn("Page 2 →",true)
-local function showPage(n)
-	currentPage=n
-	for idx,p in ipairs(pages)do p.Visible=(idx==n)end
-	backBtn.Visible=n>1;nextBtn.Visible=n<6
-	if n<6 then nextBtn.Text="Page "..(n+1).." →"end
-end
-nextBtn.MouseButton1Click:Connect(function()showPage(currentPage+1)end)
-backBtn.MouseButton1Click:Connect(function()showPage(currentPage-1)end)
+do local l=Instance.new("UIListLayout",navRow);l.FillDirection=Enum.FillDirection.Horizontal;l.HorizontalAlignment=Enum.HorizontalAlignment.Center;l.Padding=UDim.new(0,3)end
+local function mnb(txt,vis)local b=Instance.new("TextButton",navRow);b.Size=UDim2.new(0.48,0,1,0);b.BackgroundColor3=C3(35,35,35);b.TextColor3=C3(180,180,180);b.TextSize=8;b.Font=Enum.Font.GothamMedium;b.Text=txt;b.AutoButtonColor=true;b.Visible=vis;Instance.new("UICorner",b).CornerRadius=UDim.new(0,4);return b end
+local bk=mnb("← Back",false);local nx=mnb("Page 2 →",true)
+local function sp(n)cp=n;for idx,p in ipairs(pages)do p.Visible=(idx==n)end;bk.Visible=n>1;nx.Visible=n<8;if n<8 then nx.Text="Page "..(n+1).." →"end end
+nx.MouseButton1Click:Connect(function()sp(cp+1)end);bk.MouseButton1Click:Connect(function()sp(cp-1)end)
 
-local minimized=false
+local min=false
 minimizeBtn.MouseButton1Click:Connect(function()
-	minimized=not minimized
-	for idx,p in ipairs(pages)do p.Visible=(not minimized and idx==1)end
-	if not minimized then currentPage=1 end
-	navRow.Visible=not minimized;minimizeBtn.Text=minimized and"▲"or"—"
+	min=not min;for idx,p in ipairs(pages)do p.Visible=(not min and idx==1)end
+	if not min then cp=1 end;navRow.Visible=not min;minimizeBtn.Text=min and"▲"or"—";FB.scrubberGui.Enabled=not min
 end)
 
 closeBtn.MouseButton1Click:Connect(function()
-FB.cleanupGhosts();FB.setNightVision(false);FB.setFog(false);FB.disableAllWeather()
-local wp=workspace:FindFirstChild("FlashbackWeather");if wp then wp:Destroy()end
-FB.bgMusic:Stop();FB.bgMusic:Destroy()
-cam.FieldOfView=cam.FieldOfView
-FB.motionBlur:Destroy();FB.dofEffect:Destroy();FB.heartbeatCC:Destroy()
-sg:Destroy()
+	FB.cleanupGhosts();FB.setNightVision(false);FB.setFog(false);FB.disableAllWeather()
+	local wp=workspace:FindFirstChild("FlashbackWeather");if wp then wp:Destroy()end
+	FB.bgMusic:Stop();FB.bgMusic:Destroy()
+	FB.motionBlur:Destroy();FB.dofEffect:Destroy();FB.heartbeatCC:Destroy()
+	FB.scrubberGui:Destroy();sg:Destroy()
 end)
 
-print("A Flashback v18 ready! (Client) R = Record P = Play F = Freecam X = Clear ←/→ = Step J = PathRec K = PlayPath L = ClearPath")
+print("A Flashback v7.2 (Client) ready! R = Record P = Play F = Freecam X = Clear ←/→ = Step J = PathRec K = PlayPath L = ClearPath")
