@@ -856,11 +856,15 @@ mkB(pg,o[i],"🔍 Search",nil,function()
 	local q=msb.Text;if q==""then return end;msl.Text="Searching..."
 	for _,c in ipairs(srf:GetChildren())do if not c:IsA("UIListLayout")then c:Destroy()end end
 	task.spawn(function()
-		local ok,res=pcall(function()
-			local url="https://search.roblox.com/catalog/json?Category=9&Keyword="..HS:UrlEncode(q).."&ResultsPerPage=5"
-			local data=HS:JSONDecode(game:HttpGet(url))
-			return data
-		end)
+    local url="https://search.roblox.com/catalog/json?Category=9&Keyword="..HS:UrlEncode(q).."&ResultsPerPage=5"
+    local ok,raw=pcall(function()return game:HttpGet(url)end)
+    if not ok then msl.Text="Request failed.";warn("HTTP error: "..tostring(raw));return end
+    warn("RAW RESPONSE: "..tostring(raw):sub(1,500))
+    local ok2,res=pcall(function()return HS:JSONDecode(raw)end)
+    if not ok2 then msl.Text="Parse failed.";warn("JSON error: "..tostring(res));return end
+    warn("PARSED KEYS:")
+    for k,v in pairs(res)do warn(tostring(k).." = "..tostring(v))end
+end)
 		if not ok or not res or not res.Data or not res.Data.Items or #res.Data.Items==0 then
 			msl.Text="No results.";return
 		end
@@ -965,4 +969,4 @@ closeBtn.MouseButton1Click:Connect(function()
 	FB.scrubberGui:Destroy();sg:Destroy()
 end)
 
-print("A Flashback v7.2 (Client) ready! R = Record P = Play F = Freecam X = Clear ←/→ = Step J = PathRec K = PlayPath L = ClearPath")
+print("A Flashback v7.2 (Client) ready! R=Record P=Play F=Freecam X=Clear ←/→=Step J=PathRec K=PlayPath L=ClearPath")
