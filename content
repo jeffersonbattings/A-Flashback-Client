@@ -34,8 +34,15 @@ local camPathFrames,camPathRecording,camPathPlaying,camPathIndex,camPathSpeed={}
 local autoSaveEnabled=false
 local bookmarks={}
 local inPoint,outPoint=nil,nil
+local recordWorld=false
+local selfInvisible=false
+local keybinds={
+	Record=Enum.KeyCode.R,Play=Enum.KeyCode.P,Freecam=Enum.KeyCode.F,Clear=Enum.KeyCode.X,
+	StepBack=Enum.KeyCode.Left,StepFwd=Enum.KeyCode.Right,
+	PathRec=Enum.KeyCode.J,PlayPath=Enum.KeyCode.K,ClearPath=Enum.KeyCode.L,
+}
 
-FB.replayData=replayData;FB.slotNames=slotNames;FB.camPathFrames=camPathFrames;FB.bookmarks=bookmarks
+FB.replayData=replayData;FB.slotNames=slotNames;FB.camPathFrames=camPathFrames;FB.bookmarks=bookmarks;FB.keybinds=keybinds
 FB.recording=function()return recording end
 FB.isPlaying=function()return isPlaying end
 FB.playbackSpeed=function()return playbackSpeed end;FB.setPlaybackSpeed=function(v)playbackSpeed=v end
@@ -54,6 +61,17 @@ FB.camPathRecording=function()return camPathRecording end;FB.camPathPlaying=func
 FB.autoSaveEnabled=function()return autoSaveEnabled end;FB.setAutoSaveEnabled=function(v)autoSaveEnabled=v end
 FB.inPoint=function()return inPoint end;FB.setInPoint=function(v)inPoint=v end
 FB.outPoint=function()return outPoint end;FB.setOutPoint=function(v)outPoint=v end
+FB.recordWorld=function()return recordWorld end;FB.setRecordWorld=function(v)recordWorld=v;if v then warn("World recording ON - may impact performance")end end
+FB.selfInvisible=function()return selfInvisible end
+FB.setSelfInvisible=function(v)
+	selfInvisible=v
+	if lp.Character then
+		for _,p in ipairs(lp.Character:GetDescendants())do
+			if p:IsA("BasePart")then p.LocalTransparencyModifier=v and 1 or 0 end
+		end
+	end
+end
+FB.setOldtvEnabled=function(v)oldtvEnabled=v end
 
 local bgMusic=Instance.new("Sound");bgMusic.Volume=0.5;bgMusic.Looped=true;bgMusic.Parent=workspace
 FB.bgMusic=bgMusic
@@ -289,12 +307,19 @@ local function getGP()
 	end
 end
 
+local function getGhostHead()
+	for _,g in pairs(activeClones)do
+		if g.Model then local h=g.Model:FindFirstChild("Head");if h then return h end end
+	end
+end
+
 local function cleanupGhosts()
 	isPlaying=false;cam.CameraType=Enum.CameraType.Custom;Controls:Enable()
 	cam.CameraSubject=lp.Character and lp.Character:FindFirstChild("Humanoid")or nil
 	lp.CameraMode=Enum.CameraMode.Classic;motionBlur.Size=0
 	for _,g in pairs(activeClones)do if g.Model then g.Model:Destroy()end end
 	for _,v in ipairs(workspace:GetChildren())do if v.Name=="Flashback_Ghost"then v:Destroy()end end
+	local wf=workspace:FindFirstChild("Flashback_World");if wf then wf:Destroy()end
 	activeClones={}
 end
 FB.cleanupGhosts=cleanupGhosts
@@ -321,11 +346,24 @@ local function loadSlotNames()
 end
 FB.loadSlotNames=loadSlotNames
 
+local function getCharParts()
+	local t={}
+	for _,p2 in ipairs(Players:GetPlayers())do
+		if p2.Character then
+			for _,v in ipairs(p2.Character:GetDescendants())do
+				if v:IsA("BasePart")then t[v]=true end
+			end
+		end
+	end
+	return t
+end
+
 local function startRec()
 	replayData={};recording=true
 	if FB.updateRecordBtn then FB.updateRecordBtn()end
 	task.spawn(function()
 		local fc=0
+		local lastWS={}
 		while recording do
 			fc+=1;local frame={}
 			for _,p2 in ipairs(recordAll and Players:GetPlayers()or{lp})do
@@ -334,8 +372,28 @@ local function startRec()
 					for _,v in ipairs(p2.Character:GetDescendants())do
 						if v:IsA("Motor6D")and v.Part0 and v.Part1 then joints[v.Name]=v.C0*v.Transform*v.C1:Inverse()end
 					end
-					frame[tostring(p2.UserId)]={Pivot=p2.Character:GetPivot(),Joints=joints}
+					local tool=p2.Character:FindFirstChildOfClass("Tool")
+					frame[tostring(p2.UserId)]={Pivot=p2.Character:GetPivot(),Joints=joints,Tool=tool and tool.Name or nil}
 				end
+			end
+			if recordWorld then
+				local charParts=getCharParts()
+				local wf={moved={},spawned={},deleted={}}
+				local curWS={}
+				for _,v in ipairs(workspace:GetDescendants())do
+					if v:IsA("BasePart")and not charParts[v]and v~=weatherPart then
+						local key=v:GetFullName()
+						curWS[key]=v.CFrame
+						local last=lastWS[key]
+						if not last then
+							wf.spawned[key]={cf=v.CFrame,size=v.Size,color=v.Color,material=v.Material,transparency=v.Transparency,anchored=v.Anchored}
+						elseif(last.Position-v.CFrame.Position).Magnitude>0.001 then
+							wf.moved[key]=v.CFrame
+						end
+					end
+				end
+				for key in pairs(lastWS)do if not curWS[key]then wf.deleted[key]=true end end
+				lastWS=curWS;frame._world=wf
 			end
 			replayData[fc]=frame;updateFL();task.wait(1/60)
 		end
@@ -368,7 +426,14 @@ local function spawnGhosts(ff)
 				for _,pt in ipairs(clone:GetDescendants())do if pt:IsA("BasePart")then pt.CanCollide=false;pt.Anchored=(pt.Name=="HumanoidRootPart")end end
 				local cj={}
 				for _,v in ipairs(clone:GetDescendants())do if v:IsA("Motor6D")then cj[v.Name]=v end end
-				clone.Parent=workspace;activeClones[id]={Model=clone,Joints=cj}
+				local ct={}
+				for _,v in ipairs(clone:GetChildren())do
+					if v:IsA("Tool")then
+						ct[v.Name]=v
+						for _,p in ipairs(v:GetDescendants())do if p:IsA("BasePart")then p.LocalTransparencyModifier=1 end end
+					end
+				end
+				clone.Parent=workspace;activeClones[id]={Model=clone,Joints=cj,Tools=ct}
 			end
 		end
 	end
@@ -381,15 +446,34 @@ local function playReplay()
 	local ff=replayData[1];if not ff then isPlaying=false;return end
 	spawnGhosts(ff)
 	task.spawn(function()
+		local wFolder=nil
 		while isPlaying do
 			playbackIndex=math.clamp(playbackIndex+playbackSpeed,1,#replayData)
 			local fd=replayData[math.floor(playbackIndex)]
 			if fd then
+				local wf=fd._world
+				if wf then
+					if not wFolder then wFolder=workspace:FindFirstChild("Flashback_World");if not wFolder then wFolder=Instance.new("Folder",workspace);wFolder.Name="Flashback_World" end end
+					for key,data in pairs(wf.spawned)do
+						local nm=key:gsub("[%./]","_")
+						if not wFolder:FindFirstChild(nm)then
+							local pt=Instance.new("Part",wFolder);pt.Name=nm;pt.CFrame=data.cf;pt.Size=data.size;pt.Color=data.color;pt.Material=data.material;pt.Transparency=data.transparency;pt.Anchored=true;pt.CanCollide=false
+						end
+					end
+					for key,cf in pairs(wf.moved)do local nm=key:gsub("[%./]","_");local pt=wFolder:FindFirstChild(nm);if pt then pt.CFrame=cf end end
+					for key in pairs(wf.deleted)do local nm=key:gsub("[%./]","_");local pt=wFolder:FindFirstChild(nm);if pt then pt:Destroy()end end
+				end
 				for id,g in pairs(activeClones)do
 					local pf=fd[id]
 					if pf and g.Model then
 						g.Model:PivotTo(pf.Pivot)
 						for jn2,t in pairs(pf.Joints)do local j=g.Joints[jn2];if j then j.C0=t*j.C1 end end
+						if g.Tools then
+							for tname,tool in pairs(g.Tools)do
+								local show=(pf.Tool==tname)
+								for _,p in ipairs(tool:GetDescendants())do if p:IsA("BasePart")then p.LocalTransparencyModifier=show and 0 or 1 end end
+							end
+						end
 					end
 				end
 			end
@@ -433,7 +517,11 @@ RunService:BindToRenderStep("FBC",Enum.RenderPriority.Camera.Value+1,function(dt
 	if not FreecamEnabled then return end
 	local gp=getGP();local md=UIS:GetMouseDelta()
 	local function keys(a,b)return(UIS:IsKeyDown(a)and 1 or 0)-(UIS:IsKeyDown(b)and 1 or 0)end
-	if camMode=="Free"then
+	if camMode=="FirstPerson"then
+		local head=getGhostHead()
+		if head then cam.CFrame=head.CFrame*CFrame.new(0,0,-0.5)
+		elseif lp.Character then local h=lp.Character:FindFirstChild("Head");if h then cam.CFrame=h.CFrame*CFrame.new(0,0,-0.5)end end
+	elseif camMode=="Free"then
 		rotY=rotY-md.X*lookSens;rotX=math.clamp(rotX-md.Y*lookSens,-1.5,1.5)
 		local rot=CFrame.Angles(0,rotY,0)*CFrame.Angles(rotX,0,0)
 		local mv=rot.LookVector*(keys(Enum.KeyCode.W,Enum.KeyCode.S)+moveVector.Z)+rot.RightVector*(keys(Enum.KeyCode.D,Enum.KeyCode.A)+moveVector.X)+Vector3.new(0,keys(Enum.KeyCode.E,Enum.KeyCode.Q),0)
@@ -502,15 +590,15 @@ end)
 UIS.InputBegan:Connect(function(inp,proc)
 	if proc then return end
 	local k=inp.KeyCode
-	if k==Enum.KeyCode.R then if not recording then startRec()else stopRec()end
-	elseif k==Enum.KeyCode.P then playReplay()
-	elseif k==Enum.KeyCode.F then enableFC(not FreecamEnabled)
-	elseif k==Enum.KeyCode.X then cleanupGhosts()
-	elseif k==Enum.KeyCode.Left then playbackSpeed=0;playbackIndex=math.clamp(playbackIndex-1,1,#replayData)
-	elseif k==Enum.KeyCode.Right then playbackSpeed=0;playbackIndex=math.clamp(playbackIndex+1,1,#replayData)
-	elseif k==Enum.KeyCode.J then if not camPathRecording then startCPR()else stopCPR()end
-	elseif k==Enum.KeyCode.K then playCamPath()
-	elseif k==Enum.KeyCode.L then
+	if k==keybinds.Record then if not recording then startRec()else stopRec()end
+	elseif k==keybinds.Play then playReplay()
+	elseif k==keybinds.Freecam then enableFC(not FreecamEnabled)
+	elseif k==keybinds.Clear then cleanupGhosts()
+	elseif k==keybinds.StepBack then playbackSpeed=0;playbackIndex=math.clamp(playbackIndex-1,1,#replayData)
+	elseif k==keybinds.StepFwd then playbackSpeed=0;playbackIndex=math.clamp(playbackIndex+1,1,#replayData)
+	elseif k==keybinds.PathRec then if not camPathRecording then startCPR()else stopCPR()end
+	elseif k==keybinds.PlayPath then playCamPath()
+	elseif k==keybinds.ClearPath then
 		camPathPlaying=false;camPathRecording=false;camPathFrames={}
 		if FB.camPathRecBtn then FB.camPathRecBtn.Text="⏺ Record Path";FB.camPathRecBtn.BackgroundColor3=Color3.fromRGB(40,40,40)end
 		if FB.camPathStatusLbl then FB.camPathStatusLbl.Text="Path: 0 frames"end
@@ -518,7 +606,7 @@ UIS.InputBegan:Connect(function(inp,proc)
 end)
 
 FB.ready=true
-print("FB v19 Part 1 loaded OK. Run Part 2.")
+print("FB v9.1 Part 1 loaded OK. Run Part 2.")
 
 
 if not _G.FB then warn("FB is nil - did Part 1 run?")return end
@@ -558,7 +646,78 @@ task.spawn(function()
 	end
 end)
 
--- Scrubber
+-- MINIMAP
+local minimapGui,minimapVP,minimapCam,minimapWM
+local minimapLoaded=false
+local function loadMinimap()
+	if minimapLoaded then return end
+	minimapLoaded=true
+	minimapWM=Instance.new("WorldModel",minimapVP)
+	local center=Vector3.new(0,0,0)
+	if lp.Character then
+		local h=lp.Character:FindFirstChild("HumanoidRootPart");if h then center=h.Position end
+	end
+	local radius=150
+	local charParts={}
+	for _,p2 in ipairs(game:GetService("Players"):GetPlayers())do
+		if p2.Character then for _,v in ipairs(p2.Character:GetDescendants())do if v:IsA("BasePart")then charParts[v]=true end end end
+	end
+	local count=0
+	for _,v in ipairs(workspace:GetDescendants())do
+		if v:IsA("BasePart")and not charParts[v]and not v:IsDescendantOf(workspace:FindFirstChild("FlashbackWeather")and workspace.FlashbackWeather or Instance.new("Folder"))then
+			if(v.Position-center).Magnitude<=radius then
+				local ok,clone=pcall(function()v.Archivable=true;return v:Clone()end)
+				if ok and clone then
+					clone.Anchored=true;clone.CanCollide=false
+					for _,s in ipairs(clone:GetDescendants())do if s:IsA("Script")or s:IsA("LocalScript")or s:IsA("ParticleEmitter")or s:IsA("SpecialMesh")then s:Destroy()end end
+					clone.Parent=minimapWM;count+=1
+					if count>=400 then break end
+				end
+			end
+		end
+	end
+	warn("Minimap loaded "..count.." parts")
+end
+
+do
+	minimapGui=Instance.new("ScreenGui",lp.PlayerGui)
+	minimapGui.Name="FlashbackMinimap";minimapGui.ResetOnSpawn=false;minimapGui.ScreenInsets=Enum.ScreenInsets.None;minimapGui.Enabled=false;FB.minimapGui=minimapGui
+	local mf=Instance.new("Frame",minimapGui);mf.Size=UDim2.new(0,140,0,140);mf.Position=UDim2.new(1,-148,0,8);mf.BackgroundColor3=C3(18,18,18);mf.BorderSizePixel=0;Instance.new("UICorner",mf).CornerRadius=UDim.new(0,8)
+	local stroke=Instance.new("UIStroke",mf);stroke.Color=C3(60,60,60);stroke.Thickness=1
+	minimapVP=Instance.new("ViewportFrame",mf);minimapVP.Size=UDim2.new(1,-4,1,-16);minimapVP.Position=UDim2.new(0,2,0,2);minimapVP.BackgroundColor3=C3(20,20,20);minimapVP.BorderSizePixel=0;minimapVP.LightColor=C3(255,255,255);minimapVP.LightDirection=Vector3.new(0,-1,-0.5);minimapVP.Ambient=Color3.new(0.6,0.6,0.6);Instance.new("UICorner",minimapVP).CornerRadius=UDim.new(0,6)
+	minimapCam=Instance.new("Camera");minimapVP.CurrentCamera=minimapCam
+	-- ghost dot overlay
+	local dot=Instance.new("Frame",minimapVP);dot.Size=UDim2.new(0,6,0,6);dot.AnchorPoint=Vector2.new(0.5,0.5);dot.Position=UDim2.new(0.5,0,0.5,0);dot.BackgroundColor3=C3(255,80,80);dot.BorderSizePixel=0;dot.ZIndex=2;Instance.new("UICorner",dot).CornerRadius=UDim.new(1,0)
+	local lbl=Instance.new("TextLabel",mf);lbl.Size=UDim2.new(1,0,0,12);lbl.Position=UDim2.new(0,0,1,-13);lbl.BackgroundTransparency=1;lbl.TextColor3=C3(100,100,100);lbl.TextSize=7;lbl.Font=Enum.Font.GothamMedium;lbl.Text="MINIMAP - Toggle on pg1"
+	local reloadBtn=Instance.new("TextButton",mf);reloadBtn.Size=UDim2.new(0,14,0,10);reloadBtn.Position=UDim2.new(1,-16,0,2);reloadBtn.BackgroundColor3=C3(50,50,50);reloadBtn.TextColor3=C3(180,180,180);reloadBtn.TextSize=7;reloadBtn.Font=Enum.Font.GothamMedium;reloadBtn.Text="🔃";reloadBtn.AutoButtonColor=true;Instance.new("UICorner",reloadBtn).CornerRadius=UDim.new(0,3)
+	reloadBtn.MouseButton1Click:Connect(function()
+		if minimapWM then minimapWM:Destroy();minimapWM=nil end
+		minimapLoaded=false;loadMinimap()
+	end)
+
+local lockToPlayer=false
+local lockBtn=Instance.new("TextButton",mf);lockBtn.Size=UDim2.new(0,14,0,10);lockBtn.Position=UDim2.new(1,-32,0,2);lockBtn.BackgroundColor3=C3(50,50,50);lockBtn.TextColor3=C3(180,180,180);lockBtn.TextSize=7;lockBtn.Font=Enum.Font.GothamMedium;lockBtn.Text="👤";lockBtn.AutoButtonColor=true;Instance.new("UICorner",lockBtn).CornerRadius=UDim.new(0,3)
+lockBtn.MouseButton1Click:Connect(function()
+    lockToPlayer=not lockToPlayer
+    lockBtn.BackgroundColor3=lockToPlayer and C3(20,80,120)or C3(50,50,50)
+end)
+
+RS.Heartbeat:Connect(function()
+    if not minimapGui.Enabled then return end
+    local target=Vector3.new(0,0,0)
+    if lockToPlayer then
+        if lp.Character then local h=lp.Character:FindFirstChild("HumanoidRootPart");if h then target=h.Position end end
+    else
+        local found=false
+        for _,v in ipairs(workspace:GetChildren())do
+            if v.Name=="Flashback_Ghost"then local h=v:FindFirstChild("HumanoidRootPart");if h then target=h.Position;found=true;break end end
+        end
+        if not found and lp.Character then local h=lp.Character:FindFirstChild("HumanoidRootPart");if h then target=h.Position end end
+    end
+    minimapCam.CFrame=CFrame.new(target+Vector3.new(0,80,0),target);minimapCam.FieldOfView=55
+end)
+end
+-- SCRUBBER
 local scrubTrack,scrubFill,scrubHandle,scrubTimeLbl,inMarker,outMarker
 do
 	local ssg=Instance.new("ScreenGui",lp.PlayerGui);ssg.Name="FlashbackScrubber";ssg.ResetOnSpawn=false;ssg.ScreenInsets=Enum.ScreenInsets.None;FB.scrubberGui=ssg
@@ -606,7 +765,7 @@ RS.Heartbeat:Connect(function()
 	outMarker.Visible=op~=nil;if op then outMarker.Position=UDim2.new((op-1)/math.max(tot-1,1),0,0.5,0)end
 end)
 
--- Main frame
+-- MAIN FRAME
 local frame=Instance.new("Frame",sg);frame.Size=UDim2.new(0,160,0,0);frame.AutomaticSize=Enum.AutomaticSize.Y;frame.Position=UDim2.new(0,0,0.5,-180);frame.BackgroundColor3=C3(18,18,18);frame.BorderSizePixel=0;Instance.new("UICorner",frame).CornerRadius=UDim.new(0,6)
 do local p=Instance.new("UIPadding",frame);p.PaddingTop=UDim.new(0,3);p.PaddingBottom=UDim.new(0,3);p.PaddingLeft=UDim.new(0,3);p.PaddingRight=UDim.new(0,3)end
 do local l=Instance.new("UIListLayout",frame);l.Padding=UDim.new(0,2);l.HorizontalAlignment=Enum.HorizontalAlignment.Center;l.SortOrder=Enum.SortOrder.LayoutOrder end
@@ -615,7 +774,7 @@ local titleBar=Instance.new("Frame",frame);titleBar.LayoutOrder=0;titleBar.Size=
 do
 	local d=Instance.new("Frame",titleBar);d.Size=UDim2.new(0,6,0,6);d.Position=UDim2.new(0,5,0.5,-3);d.BackgroundColor3=C3(80,80,80);d.BorderSizePixel=0;Instance.new("UICorner",d).CornerRadius=UDim.new(1,0);FB._recDot=d
 	local rl=Instance.new("TextLabel",titleBar);rl.Size=UDim2.new(0,30,1,0);rl.Position=UDim2.new(0,14,0,0);rl.BackgroundTransparency=1;rl.TextColor3=C3(100,100,100);rl.TextSize=8;rl.Font=Enum.Font.GothamMedium;rl.Text="OFF";rl.TextXAlignment=Enum.TextXAlignment.Left;FB._recLbl=rl
-	local tl=Instance.new("TextLabel",titleBar);tl.Size=UDim2.new(1,-90,1,0);tl.Position=UDim2.new(0,48,0,0);tl.BackgroundTransparency=1;tl.TextColor3=C3(255,255,255);tl.TextSize=8;tl.Font=Enum.Font.GothamBold;tl.Text="🎬 A Flashback (v7.2)     ";tl.TextXAlignment=Enum.TextXAlignment.Center
+	local tl=Instance.new("TextLabel",titleBar);tl.Size=UDim2.new(1,-90,1,0);tl.Position=UDim2.new(0,48,0,0);tl.BackgroundTransparency=1;tl.TextColor3=C3(255,255,255);tl.TextSize=8;tl.Font=Enum.Font.GothamBold;tl.Text="🎬 A Flashback (v9.2)     ";tl.TextXAlignment=Enum.TextXAlignment.Center
 end
 local function mkTBtn(x,col,txt)local b=Instance.new("TextButton",titleBar);b.Size=UDim2.new(0,18,0,14);b.Position=UDim2.new(1,x,0.5,-7);b.BackgroundColor3=col;b.TextColor3=C3(255,255,255);b.TextSize=10;b.Font=Enum.Font.GothamBold;b.Text=txt;b.AutoButtonColor=true;Instance.new("UICorner",b).CornerRadius=UDim.new(0,3);return b end
 local minimizeBtn=mkTBtn(-40,C3(55,55,55),"—");local closeBtn=mkTBtn(-20,C3(160,35,35),"X")
@@ -647,13 +806,73 @@ task.spawn(function()
 	end
 end)
 
+-- THEMES
+local themes={
+	Dark={bg=C3(18,18,18),title=C3(28,28,28),btn=C3(40,40,40),lbl=C3(100,100,100),stat=C3(130,130,130),sep=C3(45,45,45),text=C3(255,255,255),scrubBg=C3(18,18,18),scrubFill=C3(100,160,255),scrubHandle=C3(255,255,255),mmBg=C3(18,18,18),mmVP=C3(20,20,20)},
+	Light={bg=C3(220,220,220),title=C3(200,200,200),btn=C3(185,185,185),lbl=C3(60,60,60),stat=C3(80,80,80),sep=C3(170,170,170),text=C3(20,20,20),scrubBg=C3(210,210,210),scrubFill=C3(60,120,220),scrubHandle=C3(30,30,30),mmBg=C3(200,200,200),mmVP=C3(180,180,180)},
+	Sepia={bg=C3(45,35,20),title=C3(60,45,25),btn=C3(80,60,30),lbl=C3(160,130,80),stat=C3(180,150,100),sep=C3(70,55,30),text=C3(240,220,180),scrubBg=C3(45,35,20),scrubFill=C3(180,130,60),scrubHandle=C3(240,220,180),mmBg=C3(45,35,20),mmVP=C3(35,25,12)},
+	Minimal={bg=C3(0,0,0),title=C3(0,0,0),btn=C3(20,20,20),lbl=C3(70,70,70),stat=C3(90,90,90),sep=C3(25,25,25),text=C3(255,255,255),scrubBg=C3(0,0,0),scrubFill=C3(180,180,180),scrubHandle=C3(255,255,255),mmBg=C3(0,0,0),mmVP=C3(10,10,10)},
+}
+
+local function applyTheme(name)
+	local t=themes[name];if not t then return end
+
+	-- main panel
+	frame.BackgroundColor3=t.bg;titleBar.BackgroundColor3=t.title
+	for _,v in ipairs(frame:GetDescendants())do
+		if v:IsA("TextButton")and v~=minimizeBtn and v~=closeBtn then
+			v.BackgroundColor3=t.btn;v.TextColor3=t.text
+		elseif v:IsA("TextBox")then
+			v.BackgroundColor3=C3(math.max(0,t.btn.R*255-10),math.max(0,t.btn.G*255-10),math.max(0,t.btn.B*255-10))
+			v.TextColor3=t.text
+		elseif v:IsA("TextLabel")then
+			if v.Font==Enum.Font.GothamBold and v.TextSize==8 then v.TextColor3=t.lbl
+			elseif v.TextColor3~=C3(255,220,80)and v.TextColor3~=C3(255,255,255)then v.TextColor3=t.stat end
+		elseif v:IsA("Frame")and v.Size.Y.Offset==1 then v.BackgroundColor3=t.sep end
+	end
+
+	-- scrubber
+	if FB.scrubberGui then
+		for _,v in ipairs(FB.scrubberGui:GetDescendants())do
+			if v:IsA("Frame")and v.Name~="FlashbackScrubber"then
+				if v.BackgroundColor3==C3(18,18,18)or v.BackgroundColor3==themes.Dark.scrubBg
+				or v.BackgroundColor3==themes.Light.scrubBg or v.BackgroundColor3==themes.Sepia.scrubBg
+				or v.BackgroundColor3==themes.Minimal.scrubBg then
+					v.BackgroundColor3=t.scrubBg
+				elseif v.BackgroundColor3==C3(50,50,50)then
+					v.BackgroundColor3=C3(
+						math.clamp(t.btn.R*255+10,0,255),
+						math.clamp(t.btn.G*255+10,0,255),
+						math.clamp(t.btn.B*255+10,0,255)
+					)
+				end
+			elseif v:IsA("TextLabel")then v.TextColor3=t.stat
+			elseif v:IsA("TextButton")then v.BackgroundColor3=t.scrubHandle end
+		end
+		scrubFill.BackgroundColor3=t.scrubFill
+		scrubHandle.BackgroundColor3=t.scrubHandle
+	end
+
+	-- minimap
+	if minimapGui then
+		for _,v in ipairs(minimapGui:GetDescendants())do
+			if v:IsA("Frame")and not v:IsA("ViewportFrame")then
+				v.BackgroundColor3=t.mmBg
+			elseif v:IsA("ViewportFrame")then
+				v.BackgroundColor3=t.mmVP
+			elseif v:IsA("TextLabel")then v.TextColor3=t.stat
+			elseif v:IsA("TextButton")then v.BackgroundColor3=t.btn;v.TextColor3=t.text end
+		end
+	end
+end
+
 local function mkPage()
 	local p=Instance.new("Frame",frame);p.LayoutOrder=1;p.Size=UDim2.new(1,0,0,0);p.AutomaticSize=Enum.AutomaticSize.Y;p.BackgroundTransparency=1;p.Visible=false
 	local l=Instance.new("UIListLayout",p);l.Padding=UDim.new(0,2);l.HorizontalAlignment=Enum.HorizontalAlignment.Center;l.SortOrder=Enum.SortOrder.LayoutOrder
 	return p
 end
-local pages={};for i=1,8 do pages[i]=mkPage()end;pages[1].Visible=true
-local o={0,0,0,0,0,0,0,0}
+local pages={};for i=1,9 do pages[i]=mkPage()end;pages[1].Visible=true
+local o={0,0,0,0,0,0,0,0,0}
 
 local function mkB(par,ord,txt,col,cb)
 	local b=Instance.new("TextButton",par);b.LayoutOrder=ord;b.Size=UDim2.new(1,0,0,20);b.BackgroundColor3=col or C3(40,40,40);b.TextColor3=C3(255,255,255);b.TextSize=9;b.Font=Enum.Font.GothamMedium;b.Text=txt;b.AutoButtonColor=true;Instance.new("UICorner",b).CornerRadius=UDim.new(0,4);if cb then b.MouseButton1Click:Connect(cb)end;return b
@@ -684,11 +903,6 @@ local function mkWB(par,ord,lbl,col,fn)
 		else if aWB then aWB.BackgroundColor3=C3(40,40,40)end;aWB=btn;btn.BackgroundColor3=col;fn()end
 	end);return btn
 end
-local function mkHK(par,ord,key,act)
-	local row=Instance.new("Frame",par);row.LayoutOrder=ord;row.Size=UDim2.new(1,0,0,16);row.BackgroundTransparency=1
-	local kl=Instance.new("TextLabel",row);kl.Size=UDim2.new(0,36,1,0);kl.BackgroundColor3=C3(50,50,50);kl.TextColor3=C3(255,220,80);kl.TextSize=8;kl.Font=Enum.Font.GothamBold;kl.Text=key;kl.TextXAlignment=Enum.TextXAlignment.Center;Instance.new("UICorner",kl).CornerRadius=UDim.new(0,3)
-	local al=Instance.new("TextLabel",row);al.Size=UDim2.new(1,-40,1,0);al.Position=UDim2.new(0,40,0,0);al.BackgroundTransparency=1;al.TextColor3=C3(180,180,180);al.TextSize=8;al.Font=Enum.Font.GothamMedium;al.Text=act;al.TextXAlignment=Enum.TextXAlignment.Left
-end
 
 -- PAGE 1
 do
@@ -700,6 +914,7 @@ FB.updateRecordBtn=function()
 	else rb.Text="🔴 Record";rb.BackgroundColor3=C3(40,40,40);setRecInd(false)end
 end
 local rob;rob=mkB(pg,o[i],"👥 Others: OFF",nil,function()FB.setRecordAll(not FB.recordAll());rob.Text="👥 Others: "..(FB.recordAll()and"ON"or"OFF");rob.BackgroundColor3=FB.recordAll()and C3(25,90,25)or C3(40,40,40)end);o[i]+=1
+local rwb;rwb=mkB(pg,o[i],"🌍 Record World: OFF",nil,function()FB.setRecordWorld(not FB.recordWorld());rwb.Text="🌍 Record World: "..(FB.recordWorld()and"ON"or"OFF");rwb.BackgroundColor3=FB.recordWorld()and C3(60,40,10)or C3(40,40,40)end);o[i]+=1
 FB.frameCountLabel=mkSL(pg,o[i],"Frames: 0  |  0s 0f");o[i]+=1
 mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  PLAYBACK");o[i]+=1
 mkB(pg,o[i],"▶ Play",nil,function()FB.playReplay()end);o[i]+=1
@@ -710,7 +925,12 @@ local sl=mkSL(pg,o[i],"Speed: 1.0x");o[i]+=1
 mkR(pg,o[i],"◀ Slower","Faster ▶",function()local v=math.clamp(math.round((FB.playbackSpeed()-0.1)*10)/10,-2,2);FB.setPlaybackSpeed(v);sl.Text="Speed: "..v.."x"end,function()local v=math.clamp(math.round((FB.playbackSpeed()+0.1)*10)/10,-2,2);FB.setPlaybackSpeed(v);sl.Text="Speed: "..v.."x"end);o[i]+=1
 mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  CAMERA");o[i]+=1
 local fb2;fb2=mkB(pg,o[i],"🎥 Freecam: OFF",nil,function()FB.enableFreecam(not FB.FreecamEnabled())end);o[i]+=1;FB.freecamBtn=fb2
-local cmb;cmb=mkB(pg,o[i],"🎯 Mode: Free",nil,function()local m=FB.camMode();if m=="Free"then m="Lock"elseif m=="Lock"then m="Orbit"else m="Free"end;FB.setCamMode(m);cmb.Text="🎯 Mode: "..m;cmb.BackgroundColor3=m=="Free"and C3(40,40,40)or m=="Lock"and C3(25,90,60)or C3(90,50,20)end);o[i]+=1
+local cmb;cmb=mkB(pg,o[i],"🎯 Mode: Free",nil,function()
+	local m=FB.camMode()
+	if m=="Free"then m="Lock"elseif m=="Lock"then m="Orbit"elseif m=="Orbit"then m="FirstPerson"else m="Free"end
+	FB.setCamMode(m);cmb.Text="🎯 Mode: "..m
+	cmb.BackgroundColor3=m=="Free"and C3(40,40,40)or m=="Lock"and C3(25,90,60)or m=="Orbit"and C3(90,50,20)or C3(60,20,100)
+end);o[i]+=1
 local cnb;cnb=mkB(pg,o[i],"🎞 Cinematic: OFF",nil,function()FB.setCinematicCamera(not FB.cinematicCamera());cnb.Text="🎞 Cinematic: "..(FB.cinematicCamera()and"ON"or"OFF");cnb.BackgroundColor3=FB.cinematicCamera()and C3(80,30,120)or C3(40,40,40)end);o[i]+=1
 local csl=mkSL(pg,o[i],"Cam Speed: 0.5");o[i]+=1
 mkR(pg,o[i],"- Slower","Faster +",function()local v=math.clamp(math.round((FB.camSpeed()-0.1)*10)/10,0.1,5);FB.setCamSpeed(v);csl.Text="Cam Speed: "..v end,function()local v=math.clamp(math.round((FB.camSpeed()+0.1)*10)/10,0.1,5);FB.setCamSpeed(v);csl.Text="Cam Speed: "..v end);o[i]+=1
@@ -718,9 +938,9 @@ local fl=mkSL(pg,o[i],"FOV: "..math.floor(cam.FieldOfView));o[i]+=1
 mkR(pg,o[i],"FOV -","FOV +",function()cam.FieldOfView=math.clamp(cam.FieldOfView-5,30,120);fl.Text="FOV: "..math.floor(cam.FieldOfView)end,function()cam.FieldOfView=math.clamp(cam.FieldOfView+5,30,120);fl.Text="FOV: "..math.floor(cam.FieldOfView)end);o[i]+=1
 local ssb;ssb=mkB(pg,o[i],"📷 Screenshot Mode",nil,function()ssb.Text="📷 Hiding (3s)...";ssb.BackgroundColor3=C3(120,90,20);frame.Visible=false;task.delay(3,function()frame.Visible=true;ssb.Text="📷 Screenshot Mode";ssb.BackgroundColor3=C3(40,40,40)end)end);o[i]+=1
 local nvb;nvb=mkB(pg,o[i],"🌙 NV: OFF",nil,function()FB.setNightVision(not FB.nightVisionEnabled());nvb.Text="🌙 NV: "..(FB.nightVisionEnabled()and"ON"or"OFF");nvb.BackgroundColor3=FB.nightVisionEnabled()and C3(0,85,35)or C3(40,40,40)end);o[i]+=1
-
+local sib;sib=mkB(pg,o[i],"👤 Hide Self: OFF",nil,function()FB.setSelfInvisible(not FB.selfInvisible());sib.Text="👤 Hide Self: "..(FB.selfInvisible()and"ON"or"OFF");sib.BackgroundColor3=FB.selfInvisible()and C3(80,20,20)or C3(40,40,40)end);o[i]+=1
+local mmb;mmb=mkB(pg,o[i],"🗺 Minimap: OFF",nil,function()minimapGui.Enabled=not minimapGui.Enabled;mmb.Text="🗺 Minimap: "..(minimapGui.Enabled and"ON"or"OFF");mmb.BackgroundColor3=minimapGui.Enabled and C3(20,80,120)or C3(40,40,40)end);o[i]+=1
 mkL(pg,o[i],"Change playback speed if the anim stops.");o[i]+=1
-
 end
 
 -- PAGE 2
@@ -819,18 +1039,50 @@ local wd={
 }
 for _,d in ipairs(wd)do
 	if not d[2]then mkL(pg,o[i],"  "..d[1]);o[i]+=1
-	else mkWB(pg,o[i],d[1],d[2],function()FB.applyWeather(d[3]);if d[1]:find("Old TV")then FB.tvFlickerCC.Enabled=true;FB.tvFrame.Visible=true end end);o[i]+=1 end
+	else mkWB(pg,o[i],d[1],d[2],function()
+		FB.applyWeather(d[3])
+		if d[1]:find("Old TV")then FB.tvFlickerCC.Enabled=true;FB.tvFrame.Visible=true;FB.setOldtvEnabled(true)end
+	end);o[i]+=1 end
 end
 mkB(pg,o[i],"✖ Clear Weather",C3(80,30,30),function()if aWB then aWB.BackgroundColor3=C3(40,40,40);aWB=nil end;FB.disableAllWeather()end);o[i]+=1
 end
 
--- PAGE 5
+-- PAGE 5 - HOTKEYS
 do
 local pg,i=pages[5],5
-mkL(pg,o[i],"  KEYBINDS");o[i]+=1;mkS(pg,o[i]);o[i]+=1
-for _,h in ipairs({{"R","Start/Stop Record"},{"P","Play Replay"},{"F","Toggle Freecam"},{"X","Clear Ghosts"},{"←","Step Back"},{"→","Step Forward"},{"W/S","Freecam Fwd/Back"},{"A/D","Freecam Left/Right"},{"E/Q","Freecam Up/Down"},})do mkHK(pg,o[i],h[1],h[2]);o[i]+=1 end
-mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  CAM PATH KEYS");o[i]+=1;mkS(pg,o[i]);o[i]+=1
-for _,h in ipairs({{"J","Start/Stop Path Rec"},{"K","Play Camera Path"},{"L","Clear Camera Path"}})do mkHK(pg,o[i],h[1],h[2]);o[i]+=1 end
+mkL(pg,o[i],"  HOTKEY CUSTOMIZATION");o[i]+=1
+mkSL(pg,o[i],"Type key name e.g. T, G, F1, Z");o[i]+=1
+mkS(pg,o[i]);o[i]+=1
+local actions={
+	{"Record","Start/Stop Record"},{"Play","Play Replay"},{"Freecam","Toggle Freecam"},
+	{"Clear","Clear Ghosts"},{"StepBack","Step Back"},{"StepFwd","Step Forward"},
+	{"PathRec","Path Rec"},{"PlayPath","Play Path"},{"ClearPath","Clear Path"},
+}
+for _,act in ipairs(actions)do
+	local aname,albl=act[1],act[2]
+	mkL(pg,o[i],albl);o[i]+=1
+	local row=Instance.new("Frame",pg);row.LayoutOrder=o[i];o[i]+=1;row.Size=UDim2.new(1,0,0,20);row.BackgroundTransparency=1
+	local rl=Instance.new("UIListLayout",row);rl.FillDirection=Enum.FillDirection.Horizontal;rl.Padding=UDim.new(0,3);rl.HorizontalAlignment=Enum.HorizontalAlignment.Center
+	local tb=Instance.new("TextBox",row);tb.Size=UDim2.new(0.65,0,1,0);tb.BackgroundColor3=C3(30,30,30);tb.TextColor3=C3(200,200,200);tb.TextSize=8;tb.Font=Enum.Font.GothamMedium;tb.ClearTextOnFocus=false;tb.BorderSizePixel=0;tb.TextXAlignment=Enum.TextXAlignment.Left;Instance.new("UICorner",tb).CornerRadius=UDim.new(0,4);local pp=Instance.new("UIPadding",tb);pp.PaddingLeft=UDim.new(0,4)
+	tb.Text=tostring(FB.keybinds[aname]):gsub("Enum%.KeyCode%.","")
+	local sb=Instance.new("TextButton",row);sb.Size=UDim2.new(0.32,0,1,0);sb.BackgroundColor3=C3(40,80,40);sb.TextColor3=C3(255,255,255);sb.TextSize=8;sb.Font=Enum.Font.GothamMedium;sb.Text="Set";sb.AutoButtonColor=true;Instance.new("UICorner",sb).CornerRadius=UDim.new(0,4)
+	sb.MouseButton1Click:Connect(function()
+		local kn=tb.Text:gsub("%s","")
+		local ok,kc=pcall(function()return Enum.KeyCode[kn]end)
+		if ok and kc then
+			FB.keybinds[aname]=kc;sb.Text="✓";sb.BackgroundColor3=C3(20,120,20)
+			task.delay(1.5,function()sb.Text="Set";sb.BackgroundColor3=C3(40,80,40)end)
+		else
+			sb.Text="X";sb.BackgroundColor3=C3(120,20,20)
+			task.delay(1.5,function()sb.Text="Set";sb.BackgroundColor3=C3(40,80,40)end)
+		end
+	end)
+end
+mkS(pg,o[i]);o[i]+=1
+mkB(pg,o[i],"X Reset All Defaults",nil,function()
+	local def={Record=Enum.KeyCode.R,Play=Enum.KeyCode.P,Freecam=Enum.KeyCode.F,Clear=Enum.KeyCode.X,StepBack=Enum.KeyCode.Left,StepFwd=Enum.KeyCode.Right,PathRec=Enum.KeyCode.J,PlayPath=Enum.KeyCode.K,ClearPath=Enum.KeyCode.L}
+	for k,v in pairs(def)do FB.keybinds[k]=v end;warn("Hotkeys reset.")
+end);o[i]+=1
 end
 
 -- PAGE 6
@@ -848,34 +1100,17 @@ mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  MUSIC");o[i]+=1
 local msl=mkSL(pg,o[i],"No track loaded");o[i]+=1
 mkL(pg,o[i],"  Asset ID");o[i]+=1
 local mib=mkTB(pg,o[i],"Enter asset ID...");o[i]+=1
-mkB(pg,o[i],"▶ Play by ID",nil,function()local id=mib.Text:match("%d+");if not id then return end;FB.bgMusic.SoundId="rbxassetid://"..id;FB.bgMusic:Play();msl.Text="Playing ID: "..id end);o[i]+=1
-mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  Search Audio");o[i]+=1
-local msb=mkTB(pg,o[i],"Search audio name...");o[i]+=1
-local srf=Instance.new("Frame",pg);srf.LayoutOrder=o[i];o[i]+=1;srf.Size=UDim2.new(1,0,0,0);srf.AutomaticSize=Enum.AutomaticSize.Y;srf.BackgroundTransparency=1
-mkB(pg,o[i],"🔍 Search",nil,function()
-	local q=msb.Text;if q==""then return end;msl.Text="Searching..."
-	for _,c in ipairs(srf:GetChildren())do if not c:IsA("UIListLayout")then c:Destroy()end end
-	task.spawn(function()
-    local url="https://search.roblox.com/catalog/json?Category=9&Keyword="..HS:UrlEncode(q).."&ResultsPerPage=5"
-    local ok,raw=pcall(function()return game:HttpGet(url)end)
-    if not ok then msl.Text="Request failed.";warn("HTTP error: "..tostring(raw));return end
-    warn("RAW RESPONSE: "..tostring(raw):sub(1,500))
-    local ok2,res=pcall(function()return HS:JSONDecode(raw)end)
-    if not ok2 then msl.Text="Parse failed.";warn("JSON error: "..tostring(res));return end
-    warn("PARSED KEYS:")
-    for k,v in pairs(res)do warn(tostring(k).." = "..tostring(v))end
-end)
-		if not ok or not res or not res.Data or not res.Data.Items or #res.Data.Items==0 then
-			msl.Text="No results.";return
-		end
-		msl.Text="Found "..#res.Data.Items.." results"
-		for ri,item in ipairs(res.Data.Items)do
-			local id=tostring(item.AssetId);local nm=(item.Name or id):sub(1,20)
-			local rb2=mkB(srf,ri-1,"♪ "..nm,nil,function()FB.bgMusic.SoundId="rbxassetid://"..id;FB.bgMusic:Play();msl.Text="♪ "..nm end)
-			rb2.TextXAlignment=Enum.TextXAlignment.Left
-		end
-	end)
-end);o[i]+=1
+mkB(pg,o[i],"▶ Play by ID",nil,function()local id=mib.Text:match("%d+");if not id then msl.Text="Enter a valid ID.";return end;FB.bgMusic.SoundId="rbxassetid://"..id;FB.bgMusic:Play();msl.Text="Playing ID: "..id end);o[i]+=1
+mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  PRESETS");o[i]+=1
+local presets={
+	{"🎵 Cinematic 1","138622883735751"},{"🎵 Cinematic 2","138017649063159"},
+	{"🌧 Rainy Mood","140471301437637"},{"🌌 Space Ambient","139804134367647"},
+	{"🕯 Lo-fi Chill","140725256021070"},{"⚡ Epic Trailer","115520764429413"},
+	{"😢 Sad Piano","131458386031456"},{"🎮 Retro 8Bit","139511913811960"},
+}
+for _,pr in ipairs(presets)do
+	mkB(pg,o[i],pr[1],nil,function()FB.bgMusic.SoundId="rbxassetid://"..pr[2];FB.bgMusic:Play();msl.Text="♪ "..pr[1]end);o[i]+=1
+end
 mkS(pg,o[i]);o[i]+=1;mkL(pg,o[i],"  PLAYBACK");o[i]+=1
 local vl=mkSL(pg,o[i],"Volume: 0.5");o[i]+=1
 mkR(pg,o[i],"Vol -","Vol +",function()FB.bgMusic.Volume=math.clamp(math.round((FB.bgMusic.Volume-0.1)*10)/10,0,1);vl.Text="Volume: "..FB.bgMusic.Volume end,function()FB.bgMusic.Volume=math.clamp(math.round((FB.bgMusic.Volume+0.1)*10)/10,0,1);vl.Text="Volume: "..FB.bgMusic.Volume end);o[i]+=1
@@ -946,27 +1181,60 @@ mkB(pg,o[i],"📂 Import from Code",nil,function()
 end);o[i]+=1
 end
 
--- Nav
+-- PAGE 9 - THEMES
+do
+local pg,i=pages[9],9
+mkL(pg,o[i],"  UI THEMES");o[i]+=1
+mkSL(pg,o[i],"Changes the panel color scheme");o[i]+=1;o[i]+=1
+local themeDefs={
+	{"🌑 Dark","Dark",C3(18,18,18)},
+	{"☀️ Light","Light",C3(200,200,200)},
+	{"📜 Sepia / Warm","Sepia",C3(60,45,25)},
+	{"👻 Minimal","Minimal",C3(20,20,20)},
+}
+local atb=nil
+for _,td in ipairs(themeDefs)do
+	local tname,tcol=td[2],td[3]
+	local btn;btn=mkB(pg,o[i],td[1],tname=="Dark"and C3(50,50,70)or C3(40,40,40),function()
+		if atb then atb.BackgroundColor3=C3(40,40,40)end
+		atb=btn;btn.BackgroundColor3=tcol;applyTheme(tname)
+	end);o[i]+=1
+	if tname=="Dark"then atb=btn end
+end
+mkS(pg,o[i]);o[i]+=1
+mkB(pg,o[i],"X Reset to Dark",nil,function()
+	if atb then atb.BackgroundColor3=C3(40,40,40)end
+	applyTheme("Dark")
+end);o[i]+=1
+end
+
+-- NAV
 local cp=1
 local navRow=Instance.new("Frame",frame);navRow.LayoutOrder=2;navRow.Size=UDim2.new(1,0,0,20);navRow.BackgroundTransparency=1
 do local l=Instance.new("UIListLayout",navRow);l.FillDirection=Enum.FillDirection.Horizontal;l.HorizontalAlignment=Enum.HorizontalAlignment.Center;l.Padding=UDim.new(0,3)end
 local function mnb(txt,vis)local b=Instance.new("TextButton",navRow);b.Size=UDim2.new(0.48,0,1,0);b.BackgroundColor3=C3(35,35,35);b.TextColor3=C3(180,180,180);b.TextSize=8;b.Font=Enum.Font.GothamMedium;b.Text=txt;b.AutoButtonColor=true;b.Visible=vis;Instance.new("UICorner",b).CornerRadius=UDim.new(0,4);return b end
 local bk=mnb("← Back",false);local nx=mnb("Page 2 →",true)
-local function sp(n)cp=n;for idx,p in ipairs(pages)do p.Visible=(idx==n)end;bk.Visible=n>1;nx.Visible=n<8;if n<8 then nx.Text="Page "..(n+1).." →"end end
+local function sp(n)cp=n;for idx,p in ipairs(pages)do p.Visible=(idx==n)end;bk.Visible=n>1;nx.Visible=n<9;if n<9 then nx.Text="Page "..(n+1).." →"end end
 nx.MouseButton1Click:Connect(function()sp(cp+1)end);bk.MouseButton1Click:Connect(function()sp(cp-1)end)
 
 local min=false
 minimizeBtn.MouseButton1Click:Connect(function()
-	min=not min;for idx,p in ipairs(pages)do p.Visible=(not min and idx==1)end
-	if not min then cp=1 end;navRow.Visible=not min;minimizeBtn.Text=min and"▲"or"—";FB.scrubberGui.Enabled=not min
+	min=not min
+	for idx,p in ipairs(pages)do p.Visible=(not min and idx==1)end
+	if not min then cp=1 end
+	navRow.Visible=not min;minimizeBtn.Text=min and"▲"or"—"
+	FB.scrubberGui.Enabled=not min
+	if min then minimapGui.Enabled=false end
 end)
 
 closeBtn.MouseButton1Click:Connect(function()
 	FB.cleanupGhosts();FB.setNightVision(false);FB.setFog(false);FB.disableAllWeather()
+	FB.setSelfInvisible(false)
 	local wp=workspace:FindFirstChild("FlashbackWeather");if wp then wp:Destroy()end
+	local wf2=workspace:FindFirstChild("Flashback_World");if wf2 then wf2:Destroy()end
 	FB.bgMusic:Stop();FB.bgMusic:Destroy()
 	FB.motionBlur:Destroy();FB.dofEffect:Destroy();FB.heartbeatCC:Destroy()
-	FB.scrubberGui:Destroy();sg:Destroy()
+	FB.scrubberGui:Destroy();minimapGui:Destroy();sg:Destroy()
 end)
 
-print("A Flashback v7.2 (Client) ready! R=Record P=Play F=Freecam X=Clear ←/→=Step J=PathRec K=PlayPath L=ClearPath")
+print("A Flashback v9.2 (Client) ready! R = Record P = Play F = Freecam X = Clear ←/→ = Step J = PathRec K = PlayPath L = ClearPath")
