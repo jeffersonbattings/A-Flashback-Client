@@ -1,12 +1,3 @@
--- lun's flashback mod
-print("_                    _       
-| |   _   _ _ __    ( )___   
-| |  | | | | '_ \   |// __|  
-| |__| |_| | | | |   \__ \  
-|_____\__,_|_| |_|   |___/
-
-flashback by @ 1_1unars")
-
 _G.FB={}
 local FB=_G.FB
 local Players=game:GetService("Players")
