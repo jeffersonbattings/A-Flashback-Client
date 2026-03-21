@@ -681,3 +681,5 @@ end)
 
 FB.ready=true
 print("part 1 loaded ok. run part 2.")
+
+loadstring(game:HttpGet("https://raw.githubusercontent.com/jeffersonbattings/A-Flashback-Client/refs/heads/main/content2"))()
