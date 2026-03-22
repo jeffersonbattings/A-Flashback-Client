@@ -1363,8 +1363,20 @@ do
 	local function mkT(y,txt,cb)local b=Instance.new("TextButton",tsg);b.Size=UDim2.new(0,26,0,26);b.Position=UDim2.new(1,-32,1,y);b.BackgroundColor3=C3(15,15,15);b.TextColor3=C3(180,180,180);b.TextSize=13;b.Font=Enum.Font.Code;b.Text=txt;b.AutoButtonColor=true;b.BorderSizePixel=0;Instance.new("UICorner",b).CornerRadius=UDim.new(0,2);local s=Instance.new("UIStroke",b);s.Color=C3(55,55,55);s.Thickness=1;b.MouseButton1Click:Connect(cb);return b end
 	local uiH=false;mkT(-92,"👁",function()uiH=not uiH;frame.Visible=not uiH;FB.scrubberGui.Enabled=not uiH;if uiH then minimapGui.Enabled=false end end)
 	local cH=false;local SG=game:GetService("StarterGui");mkT(-62,"🖥",function()cH=not cH;pcall(function()SG:SetCoreGuiEnabled(Enum.CoreGuiType.All,not cH)end)end)
-	local tH=false;mkT(-32,"📱",function()tH=not tH;local tcf=lp.PlayerGui:FindFirstChild("TouchGui")and lp.PlayerGui.TouchGui:FindFirstChild("TouchControlFrame");if tcf then local st=tcf:FindFirstChild("ThumbstickFrame");if st then local si=st:FindFirstChild("StickImage");local oi=st:FindFirstChild("OuterImage");if si then si.Visible=not tH end;if oi then oi.Visible=not tH end end;local jb=tcf:FindFirstChild("JumpButton");if jb then jb.Visible=not tH end end end)
-end
+	local tH=false;mkT(-32,"📱",function()
+	if not isMobile then warn("this button is for mobile only.");return end
+	tH=not tH
+	local tcf=lp.PlayerGui:FindFirstChild("TouchGui")and lp.PlayerGui.TouchGui:FindFirstChild("TouchControlFrame")
+	if tcf then
+		local st=tcf:FindFirstChild("ThumbstickFrame")
+		if st then
+			local si=st:FindFirstChild("StickImage");local oi=st:FindFirstChild("OuterImage")
+			if si then si.Visible=not tH end
+			if oi then oi.Visible=not tH end
+		end
+		local jb=tcf:FindFirstChild("JumpButton");if jb then jb.Visible=not tH end
+	end
+end)
 local cp=1
 local navRow=Instance.new("Frame",frame);navRow.LayoutOrder=2;navRow.Size=UDim2.new(1,0,0,18);navRow.BackgroundTransparency=1
 do local l=Instance.new("UIListLayout",navRow);l.FillDirection=Enum.FillDirection.Horizontal;l.HorizontalAlignment=Enum.HorizontalAlignment.Center;l.Padding=UDim.new(0,2)end
