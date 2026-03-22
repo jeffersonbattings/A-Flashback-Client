@@ -682,7 +682,6 @@ end)
 FB.ready=true
 print("part 1 loaded ok. run part 2.")
 
-```lua
 if not _G.FB then warn("did part 1 run?")return end
 local FB=_G.FB
 repeat task.wait()until FB.ready
