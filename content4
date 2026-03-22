@@ -1712,21 +1712,34 @@ do
 		b.MouseButton1Click:Connect(cb);return b
 	end
 	local uiHidden=false
-mkToggle(-62,"👁",function()
+mkToggle(-92,"👁",function()
 	uiHidden=not uiHidden
 	frame.Visible=not uiHidden
 	FB.scrubberGui.Enabled=not uiHidden
 	if uiHidden then minimapGui.Enabled=false end
-	local tg=lp.PlayerGui:FindFirstChild("TouchGui")
-	if tg then tg.Enabled=not uiHidden end
 end)
-	local coreHidden=false
-	local SG=game:GetService("StarterGui")
-	mkToggle(-32,"🖥",function()
-		coreHidden=not coreHidden
-		pcall(function()SG:SetCoreGuiEnabled(Enum.CoreGuiType.All,not coreHidden)end)
-	end)
-end
+
+local coreHidden=false
+local SG=game:GetService("StarterGui")
+mkToggle(-62,"🖥",function()
+	coreHidden=not coreHidden
+	pcall(function()SG:SetCoreGuiEnabled(Enum.CoreGuiType.All,not coreHidden)end)
+end)
+
+local touchHidden=false
+mkToggle(-32,"📱",function()
+	touchHidden=not touchHidden
+	local tg=lp.PlayerGui:FindFirstChild("TouchGui")
+	if tg then
+		for _,v in ipairs(tg:GetDescendants())do
+			if v:IsA("ImageButton")or v:IsA("ImageLabel")or v:IsA("TextButton")or v:IsA("Frame")then
+				v.BackgroundTransparency=touchHidden and 1 or v.BackgroundTransparency
+				if v:IsA("ImageButton")or v:IsA("ImageLabel")then v.ImageTransparency=touchHidden and 1 or 0 end
+				if v:IsA("TextButton")then v.TextTransparency=touchHidden and 1 or 0 end
+			end
+		end
+	end
+end)
 
 
 -- NAV
