@@ -1702,6 +1702,31 @@ local pg,i=pages[12],12
 mkL(pg,o[i],"  made by @ 1_1unars on Roblox");o[i]+=1
 end
 
+do
+	local tsg=Instance.new("ScreenGui",lp.PlayerGui);tsg.Name="FlashbackToggles";tsg.ResetOnSpawn=false;tsg.ScreenInsets=Enum.ScreenInsets.None
+	local function mkToggle(yOff,txt,cb)
+		local b=Instance.new("TextButton",tsg);b.Size=UDim2.new(0,26,0,26);b.Position=UDim2.new(1,-32,1,yOff)
+		b.BackgroundColor3=C3(15,15,15);b.TextColor3=C3(180,180,180);b.TextSize=13;b.Font=Enum.Font.Code;b.Text=txt
+		b.AutoButtonColor=true;b.BorderSizePixel=0;Instance.new("UICorner",b).CornerRadius=UDim.new(0,2)
+		local s=Instance.new("UIStroke",b);s.Color=C3(55,55,55);s.Thickness=1
+		b.MouseButton1Click:Connect(cb);return b
+	end
+	local uiHidden=false
+	mkToggle(-62,"👁",function()
+		uiHidden=not uiHidden
+		frame.Visible=not uiHidden
+		FB.scrubberGui.Enabled=not uiHidden
+		if uiHidden then minimapGui.Enabled=false end
+	end)
+	local coreHidden=false
+	local SG=game:GetService("StarterGui")
+	mkToggle(-32,"🖥",function()
+		coreHidden=not coreHidden
+		pcall(function()SG:SetCoreGuiEnabled(Enum.CoreGuiType.All,not coreHidden)end)
+	end)
+end
+
+
 -- NAV
 local cp=1
 local navRow=Instance.new("Frame",frame);navRow.LayoutOrder=2;navRow.Size=UDim2.new(1,0,0,20);navRow.BackgroundTransparency=1
