@@ -1712,12 +1712,14 @@ do
 		b.MouseButton1Click:Connect(cb);return b
 	end
 	local uiHidden=false
-	mkToggle(-62,"👁",function()
-		uiHidden=not uiHidden
-		frame.Visible=not uiHidden
-		FB.scrubberGui.Enabled=not uiHidden
-		if uiHidden then minimapGui.Enabled=false end
-	end)
+mkToggle(-62,"👁",function()
+	uiHidden=not uiHidden
+	frame.Visible=not uiHidden
+	FB.scrubberGui.Enabled=not uiHidden
+	if uiHidden then minimapGui.Enabled=false end
+	local tg=lp.PlayerGui:FindFirstChild("TouchGui")
+	if tg then tg.Enabled=not uiHidden end
+end)
 	local coreHidden=false
 	local SG=game:GetService("StarterGui")
 	mkToggle(-32,"🖥",function()
