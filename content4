@@ -1729,15 +1729,16 @@ end)
 local touchHidden=false
 mkToggle(-32,"📱",function()
 	touchHidden=not touchHidden
-	local tg=lp.PlayerGui:FindFirstChild("TouchGui")
-	if tg then
-		for _,v in ipairs(tg:GetDescendants())do
-			if v:IsA("ImageButton")or v:IsA("ImageLabel")or v:IsA("TextButton")or v:IsA("Frame")then
-				v.BackgroundTransparency=touchHidden and 1 or v.BackgroundTransparency
-				if v:IsA("ImageButton")or v:IsA("ImageLabel")then v.ImageTransparency=touchHidden and 1 or 0 end
-				if v:IsA("TextButton")then v.TextTransparency=touchHidden and 1 or 0 end
-			end
+	local tcf=lp.PlayerGui:FindFirstChild("TouchGui")and lp.PlayerGui.TouchGui:FindFirstChild("TouchControlFrame")
+	if tcf then
+		local stick=tcf:FindFirstChild("ThumbstickFrame")
+		if stick then
+			local si=stick:FindFirstChild("StickImage");local oi=stick:FindFirstChild("OuterImage")
+			if si then si.Visible=not touchHidden end
+			if oi then oi.Visible=not touchHidden end
 		end
+		local jb=tcf:FindFirstChild("JumpButton")
+		if jb then jb.Visible=not touchHidden end
 	end
 end)
 
